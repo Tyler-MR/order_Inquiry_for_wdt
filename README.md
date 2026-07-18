@@ -88,4 +88,3 @@ python -m compileall -q backend/app
 cd frontend
 npm run build
 ```
-
