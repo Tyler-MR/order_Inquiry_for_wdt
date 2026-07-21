@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt ./
-RUN pip install --retries 10 --timeout 120 --upgrade -r requirements.txt
+RUN pip install --index-url https://pypi.tuna.tsinghua.edu.cn/simple --retries 10 --timeout 120 --upgrade -r requirements.txt
 
 COPY app ./app
 COPY scripts ./scripts
