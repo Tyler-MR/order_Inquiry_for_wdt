@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -55,3 +55,53 @@ class Lead(Base):
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="new", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class WdtOrder(Base):
+    """旺店通订单原始快照；保留 JSON 以兼容接口动态字段。"""
+
+    __tablename__ = "order_query"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    order_key: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    platform_id: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="")
+    trade_no: Mapped[str] = mapped_column(String(128), index=True, nullable=False, default="")
+    shop_name: Mapped[str] = mapped_column(String(255), index=True, nullable=False, default="")
+    modified_at: Mapped[datetime | None] = mapped_column(DateTime, index=True, nullable=True)
+    trade_at: Mapped[datetime | None] = mapped_column(DateTime, index=True, nullable=True)
+    order_created_at: Mapped[datetime | None] = mapped_column(DateTime, index=True, nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+
+class WdtSyncRun(Base):
+    """旺店通后台同步记录，方便看板显示最近同步状态和排查失败。"""
+
+    __tablename__ = "wdt_sync_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    window_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    fetched_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ShopOwnerMap(Base):
+    """Normalized shop-to-owner reference data imported from the Windows workbook."""
+
+    __tablename__ = "shop_owner_map"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    shop_name: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    owner_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    platform: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

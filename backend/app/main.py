@@ -1,18 +1,27 @@
+import asyncio
+import contextlib
+import logging
 import os
 import secrets
-from datetime import date
+from contextlib import asynccontextmanager
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 load_dotenv()
 
 from app.profit_service import DEFAULT_DATA_DIR, ProfitDataStore, parse_date
+from app.database import get_db
+from app.order_events import OrderEventBus
+from app.order_sync import latest_sync, read_order_analysis, sync_recent_orders
 from app.schemas import WdtOrderQueryRequest, WdtOrderQueryResponse
 from app.wdt_client import WdtApiError, WdtConfigError, query_orders
 
@@ -64,14 +73,64 @@ DEMO_USERS: dict[str, dict[str, str]] = {
 }
 
 SESSION_STORE: dict[str, UserSession] = {}
+logger = logging.getLogger(__name__)
+order_event_bus = OrderEventBus()
 
 DATA_DIR = Path(os.getenv("PROFIT_DATA_DIR", str(DEFAULT_DATA_DIR)))
 profit_store = ProfitDataStore(DATA_DIR)
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+async def run_order_sync_once() -> None:
+    try:
+        result = await asyncio.to_thread(sync_recent_orders)
+        await order_event_bus.publish({"event": "orders.updated", **result})
+    except Exception as error:
+        logger.exception("后台旺店通同步失败")
+        await order_event_bus.publish(
+            {
+                "event": "orders.sync_failed",
+                "status": "failed",
+                "message": str(error)[:1000],
+            }
+        )
+
+
+async def order_sync_loop() -> None:
+    if not _env_bool("WDT_SYNC_ENABLED", True):
+        logger.info("WDT_SYNC_ENABLED=false，跳过后台订单同步")
+        return
+
+    if _env_bool("WDT_SYNC_ON_STARTUP", True):
+        await run_order_sync_once()
+
+    interval = max(60, int(os.getenv("WDT_SYNC_INTERVAL_SECONDS", "420")))
+    while True:
+        await asyncio.sleep(interval)
+        await run_order_sync_once()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    sync_task = asyncio.create_task(order_sync_loop())
+    try:
+        yield
+    finally:
+        sync_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sync_task
+
 
 app = FastAPI(
     title="旺店通订单查询与分析 API",
     description="查询旺店通订单，并提供店铺、商品、时间维度的经营分析。",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
@@ -166,6 +225,64 @@ def query_wdt_orders(payload: WdtOrderQueryRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"订单分析失败：{error}") from error
+
+
+@app.post("/api/wdt/orders/dashboard", response_model=WdtOrderQueryResponse)
+def read_wdt_dashboard(payload: WdtOrderQueryRequest, db=Depends(get_db)) -> dict[str, Any]:
+    """从 MySQL 读取最近同步的订单，不直接访问旺店通。"""
+
+    if payload.start_time >= payload.end_time:
+        raise HTTPException(status_code=400, detail="开始时间必须早于结束时间")
+
+    try:
+        result = read_order_analysis(
+            db,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+            platform_ids=payload.platform_ids,
+            time_type=payload.time_type,
+            dashboard_filters=payload.dashboard_filters.model_dump(),
+        )
+        sync = latest_sync(db)
+        result["last_synced_at"] = sync.get("synced_at") if sync else None
+        result["sync_status"] = sync.get("status") if sync else "not_started"
+        return result
+    except SQLAlchemyError as error:
+        logger.exception("读取本地订单数据失败")
+        raise HTTPException(status_code=503, detail="本地 MySQL 暂不可用，请检查 DATABASE_URL 和数据库账号。") from error
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"读取本地订单数据失败：{error}") from error
+
+
+@app.get("/api/wdt/orders/events")
+async def order_events() -> StreamingResponse:
+    """SSE：后台同步成功后向所有看板客户端广播轻量更新通知。"""
+
+    return StreamingResponse(
+        order_event_bus.stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/wdt/orders/sync")
+async def trigger_wdt_sync() -> dict[str, Any]:
+    """手动触发一次同步，供管理员排查或补数使用。"""
+
+    try:
+        result = await asyncio.to_thread(sync_recent_orders)
+        await order_event_bus.publish({"event": "orders.updated", **result})
+        return result
+    except WdtConfigError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+    except WdtApiError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"订单同步失败：{error}") from error
 
 
 @app.post("/api/auth/login", response_model=LoginResponse)

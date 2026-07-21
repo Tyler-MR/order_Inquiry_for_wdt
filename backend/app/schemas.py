@@ -63,6 +63,18 @@ class LeadOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class WdtDashboardFilters(BaseModel):
+    """两个 Tableau 仪表板共用的维度筛选器。"""
+
+    brand: list[str] = Field(default_factory=list)
+    sku_codes: list[str] = Field(default_factory=list)
+    product_names: list[str] = Field(default_factory=list)
+    shop_names: list[str] = Field(default_factory=list)
+    owner_names: list[str] = Field(default_factory=list)
+    date_layers: list[str] = Field(default_factory=list)
+    time_truncated: bool = True
+
+
 class WdtOrderQueryRequest(BaseModel):
     start_time: datetime
     end_time: datetime
@@ -71,6 +83,7 @@ class WdtOrderQueryRequest(BaseModel):
     time_type: int = Field(default=1, ge=1, le=3)
     # 留空时由后端读取 total_count，自动翻完该时间窗口的所有分页。
     max_pages: int | None = Field(default=None, ge=1, le=1000)
+    dashboard_filters: WdtDashboardFilters = Field(default_factory=WdtDashboardFilters)
 
 
 class WdtOrderQueryResponse(BaseModel):
@@ -91,3 +104,13 @@ class WdtOrderQueryResponse(BaseModel):
     daily: list[dict[str, Any]]
     shops: list[dict[str, Any]]
     products: list[dict[str, Any]]
+    hourly: list[dict[str, Any]] = Field(default_factory=list)
+    shop_comparison: list[dict[str, Any]] = Field(default_factory=list)
+    product_comparison: list[dict[str, Any]] = Field(default_factory=list)
+    owner_comparison: list[dict[str, Any]] = Field(default_factory=list)
+    comparison: dict[str, Any] = Field(default_factory=dict)
+    filter_options: dict[str, Any] = Field(default_factory=dict)
+    active_filters: dict[str, Any] = Field(default_factory=dict)
+    pre_filter_order_count: int | None = None
+    last_synced_at: str | None = None
+    sync_status: str | None = None

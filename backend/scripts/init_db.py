@@ -7,7 +7,7 @@ sys.path.append(str(ROOT_DIR))
 from sqlalchemy import select
 
 from app.database import Base, SessionLocal, engine
-from app.models import Category, Platform, User
+from app.models import Category, Platform, ShopOwnerMap, User, WdtOrder, WdtSyncRun
 
 PLATFORMS = [
     {"name": "抖音", "platform_type": "内容电商", "focus": "短视频种草、直播转化、爆品测款", "metric": "达人分销"},
