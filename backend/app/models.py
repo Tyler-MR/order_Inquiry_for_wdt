@@ -107,3 +107,25 @@ class ShopOwnerMap(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class ProductMaster(Base):
+    """商品基础资料，由 Windows Excel 定时导入 Linux MySQL。"""
+
+    __tablename__ = "product_master"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    lookup_code: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    product_code: Mapped[str] = mapped_column(String(128), index=True, nullable=False, default="")
+    sku_code: Mapped[str] = mapped_column(String(128), index=True, nullable=False, default="")
+    product_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    product_spec: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    source_sheet: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    source_file: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

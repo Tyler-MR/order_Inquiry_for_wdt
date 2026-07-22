@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 
 from app.database import SessionLocal
-from app.models import ShopOwnerMap
+from app.models import ProductMaster, ShopOwnerMap
 
 
 WDT_API_URL = os.getenv("WDT_API_URL", "https://openapi.huice.com/openapi/trade_query.php")
@@ -34,6 +34,9 @@ LOCAL_TZ = ZoneInfo(os.getenv("APP_TIMEZONE", "Asia/Shanghai"))
 _shop_owner_cache: dict[str, str] = {}
 _shop_owner_cache_loaded_at = 0.0
 SHOP_OWNER_CACHE_SECONDS = max(0.0, float(os.getenv("WDT_SHOP_OWNER_CACHE_SECONDS", "30")))
+_product_master_cache: dict[str, dict[str, str]] = {}
+_product_master_cache_loaded_at = 0.0
+PRODUCT_MASTER_CACHE_SECONDS = max(0.0, float(os.getenv("WDT_PRODUCT_MASTER_CACHE_SECONDS", "30")))
 logger = logging.getLogger(__name__)
 
 
@@ -212,7 +215,7 @@ def _first_number(record: dict[str, Any], fields: tuple[str, ...]) -> float:
 
 
 def _order_amount(order: dict[str, Any]) -> float:
-    """Return the order total calculated from its goods-level paid amounts."""
+    """Return the order total calculated from goods-level share_amount values."""
     goods_list = order.get("goods_list") or []
     return sum(_goods_amount(goods) for goods in goods_list)
 
@@ -277,6 +280,42 @@ def _load_shop_owner_map() -> dict[str, str]:
     """从 MySQL 读取店铺-负责人映射，并在进程内短暂缓存。"""
 
     return _load_shop_owner_map_from_db()
+
+
+def _load_product_master_map() -> dict[str, dict[str, str]]:
+    """Load the SKU/product-code mapping imported from Windows Excel."""
+
+    global _product_master_cache, _product_master_cache_loaded_at
+    now = time.monotonic()
+    if (
+        _product_master_cache
+        and PRODUCT_MASTER_CACHE_SECONDS > 0
+        and now - _product_master_cache_loaded_at < PRODUCT_MASTER_CACHE_SECONDS
+    ):
+        return _product_master_cache
+
+    try:
+        with SessionLocal() as db:
+            rows = db.scalars(
+                select(ProductMaster).where(ProductMaster.is_active.is_(True))
+            ).all()
+            mapping = {
+                row.lookup_code.strip(): {
+                    "product_code": row.product_code.strip(),
+                    "sku_code": row.sku_code.strip(),
+                    "product_name": row.product_name.strip(),
+                    "product_spec": row.product_spec.strip(),
+                }
+                for row in rows
+                if row.lookup_code and row.lookup_code.strip()
+            }
+        _product_master_cache = mapping
+        _product_master_cache_loaded_at = now
+    except Exception:
+        logger.exception("Failed to load product master mapping from MySQL")
+        if not _product_master_cache:
+            return {}
+    return _product_master_cache
 
 
 def _load_shop_owner_map_from_db() -> dict[str, str]:
@@ -380,10 +419,37 @@ def _shop_info(order: dict[str, Any]) -> tuple[str, str]:
     return shop_id, shop_name
 
 
-def _product_info(goods: dict[str, Any]) -> tuple[str, str, str]:
+def _product_lookup_codes(goods: dict[str, Any]) -> list[str]:
+    codes: list[str] = []
+    seen: set[str] = set()
+    for field in ("sku_code", "sku_no", "spec_no", "api_spec_no", "goods_no", "api_goods_no"):
+        value = str(goods.get(field) or "").strip()
+        if value and value not in seen:
+            seen.add(value)
+            codes.append(value)
+    return codes
+
+
+def _product_info(
+    goods: dict[str, Any],
+    product_master: dict[str, dict[str, str]] | None = None,
+) -> tuple[str, str, str]:
     product_no = str(goods.get("goods_no") or goods.get("spec_no") or goods.get("api_goods_no") or "")
     product_name = str(goods.get("goods_name") or goods.get("api_goods_name") or "未识别商品")
     spec_name = str(goods.get("spec_name") or goods.get("api_spec_name") or "")
+    mapping = product_master if product_master is not None else _load_product_master_map()
+    mapped_name = ""
+    mapped_spec = ""
+    for code in _product_lookup_codes(goods):
+        item = mapping.get(code)
+        if not item:
+            continue
+        mapped_name = mapped_name or item.get("product_name", "")
+        mapped_spec = mapped_spec or item.get("product_spec", "")
+        if mapped_name and mapped_spec:
+            break
+    product_name = mapped_name or product_name
+    spec_name = mapped_spec or spec_name
     return product_no, product_name, spec_name
 
 
@@ -437,6 +503,7 @@ def build_analysis(
     }
     comparison_totals = _new_comparison_entry()
     owner_map = _load_shop_owner_map()
+    product_master = _load_product_master_map()
     comparison_date = comparison_date or end_time.date()
     local_today = datetime.now(LOCAL_TZ).date()
     local_current_hour = datetime.now(LOCAL_TZ).hour
@@ -502,7 +569,7 @@ def build_analysis(
             units = _goods_units(goods)
             line_amount = _goods_amount(goods)
             order_units += units
-            product_no, product_name, spec_name = _product_info(goods)
+            product_no, product_name, spec_name = _product_info(goods, product_master)
             product_key = f"{product_no}|{product_name}|{spec_name}"
             product = products.setdefault(
                 product_key,

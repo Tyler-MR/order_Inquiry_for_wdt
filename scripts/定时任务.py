@@ -14,6 +14,8 @@ tz = pytz.timezone('Asia/Shanghai')
 path = r'C:\Users\Financial\Desktop\PyCharm 2023.1.4\Financial_data'
 order_project_path = r'C:\Users\Financial\wwwroot\order_Inquiry_for_wdt'
 shop_owner_excel = r'C:\Company\Python导入数据\财务部\拼多多淘宝店铺信息表.xlsx'
+product_spec_excel = r'C:\Users\Financial\Desktop\规格数量.xlsx'
+product_master_excel = r'C:\Company\Python导入数据\表\产品成本佣金表.xlsx'
 linux_ssh_key = r'C:\Users\Financial\.ssh\codex_linux_deploy_ed25519'
 
 
@@ -48,6 +50,32 @@ def sync_shop_owner_map():
 
 
 schedule.every().day.at("01:00", tz).do(sync_shop_owner_map)
+
+
+def sync_product_master():
+    """每天将商品名称和商品规格同步到 Linux MySQL。"""
+    sync_script = os.path.join(order_project_path, 'scripts', 'sync_product_master.py')
+    python_exe = r'C:\Users\Financial\AppData\Local\Programs\Python\Python311\python.exe'
+    if not os.path.isfile(python_exe):
+        python_exe = sys.executable
+
+    subprocess.run(
+        [
+            python_exe,
+            sync_script,
+            '--spec-excel',
+            product_spec_excel,
+            '--product-excel',
+            product_master_excel,
+            '--ssh-key',
+            linux_ssh_key,
+        ],
+        cwd=order_project_path,
+        check=False,
+    )
+
+
+schedule.every().day.at("01:00", tz).do(sync_product_master)
 
 
 def mysql_sviptrader():

@@ -81,6 +81,17 @@ py -3 scripts\sync_shop_owner_map.py `
 
 ## Windows 每日定时同步
 
+商品基础数据每日同步（由 `scripts\定时任务.py` 在凌晨 01:00 执行）：
+
+```powershell
+py -3 scripts\sync_product_master.py `
+  --spec-excel C:\Users\Financial\Desktop\规格数量.xlsx `
+  --product-excel C:\Company\Python导入数据\表\产品成本佣金表.xlsx `
+  --ssh-key C:\Users\Financial\.ssh\codex_linux_deploy_ed25519
+```
+
+脚本会读取 `sku编码`、`产品规格`，以及产品成本佣金表各商品编码表中的 `商品编码`、`商品名称`，生成 `sync\product_master.json`，上传 Linux 后导入 `product_master` MySQL 表。订单看板会按 `sku_code/spec_no/goods_no` 关联并覆盖商品规格和商品名称。
+
 在“任务计划程序”中新建任务：
 
 - 每天执行，例如 02:00

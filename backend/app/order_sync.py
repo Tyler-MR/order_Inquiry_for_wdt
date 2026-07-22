@@ -16,8 +16,10 @@ from app.database import SessionLocal
 from app.models import WdtOrder, WdtSyncRun
 from app.wdt_client import (
     _load_shop_owner_map,
+    _load_product_master_map,
     _order_analysis_datetime,
     _owner_name,
+    _product_info,
     build_analysis,
     fetch_orders,
     normalize_shop_name,
@@ -331,6 +333,7 @@ def _filter_options(orders: list[dict[str, Any]]) -> dict[str, Any]:
     brands: set[str] = set()
     owners: set[str] = set()
     owner_map = _load_shop_owner_map()
+    product_master = _load_product_master_map()
     for order in orders:
         shop_name = _order_shop_name(order)
         if shop_name:
@@ -338,7 +341,7 @@ def _filter_options(orders: list[dict[str, Any]]) -> dict[str, Any]:
         owners.add(_owner_name(order, shop_name, owner_map))
         for goods in order.get("goods_list") or []:
             sku = _goods_sku(goods)
-            product_name = _goods_product_name(goods)
+            product_name = _product_info(goods, product_master)[1]
             brand = _goods_brand(goods)
             if sku:
                 skus.add(sku)
@@ -373,6 +376,7 @@ def _apply_dashboard_filters(
     local_now = datetime.now(LOCAL_TZ)
     current_hour = local_now.hour
     owner_map = _load_shop_owner_map() if owner_names else {}
+    product_master = _load_product_master_map() if brands or sku_codes or product_names else {}
     if not any((brands, sku_codes, product_names, shop_names, owner_names, date_layers)) and not time_truncated:
         return orders
 
@@ -398,7 +402,7 @@ def _apply_dashboard_filters(
             matched_goods = []
             for goods in goods_list:
                 brand = _goods_brand(goods)
-                product_name = _goods_product_name(goods)
+                product_name = _product_info(goods, product_master)[1]
                 # 当前旺店通订单接口没有独立品牌字段时，品牌筛选退化为商品名称关键词匹配。
                 brand_match = (
                     not brands
