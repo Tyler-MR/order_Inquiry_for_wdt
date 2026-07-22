@@ -12,6 +12,7 @@ import urllib.request
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
@@ -29,6 +30,7 @@ WDT_WINDOW_HOURS = max(1, min(24, int(os.getenv("WDT_WINDOW_HOURS", "6"))))
 # 0 表示不设默认页数上限，按接口返回的 total_count 自动翻完。
 WDT_MAX_PAGES = int(os.getenv("WDT_MAX_PAGES", "0"))
 WDT_RATE_LIMIT_RETRIES = int(os.getenv("WDT_RATE_LIMIT_RETRIES", "4"))
+LOCAL_TZ = ZoneInfo(os.getenv("APP_TIMEZONE", "Asia/Shanghai"))
 _shop_owner_cache: dict[str, str] = {}
 _shop_owner_cache_loaded_at = 0.0
 SHOP_OWNER_CACHE_SECONDS = max(0.0, float(os.getenv("WDT_SHOP_OWNER_CACHE_SECONDS", "30")))
@@ -409,7 +411,9 @@ def build_analysis(
     comparison_totals = _new_comparison_entry()
     owner_map = _load_shop_owner_map()
     comparison_date = end_time.date()
-    comparison_cutoff_hour = datetime.now().hour if comparison_date == date.today() else 24
+    local_today = datetime.now(LOCAL_TZ).date()
+    local_current_hour = datetime.now(LOCAL_TZ).hour
+    comparison_cutoff_hour = local_current_hour if comparison_date == local_today else 24
     matched_owner_orders = 0
     order_amount = 0.0
     paid_amount = 0.0
@@ -567,7 +571,7 @@ def build_analysis(
     hourly_rows = [
         _finalize_comparison_entry(item)
         for hour, item in hourly_comparison.items()
-        if comparison_date != date.today() or hour < comparison_cutoff_hour
+        if comparison_date != local_today or hour < comparison_cutoff_hour
     ]
     cumulative_today_amount = 0.0
     cumulative_yesterday_amount = 0.0

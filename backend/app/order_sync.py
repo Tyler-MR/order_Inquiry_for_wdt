@@ -225,7 +225,7 @@ def _order_shop_name(order: dict[str, Any]) -> str:
 def _date_layer(event_at: datetime | None) -> str:
     if event_at is None:
         return ""
-    today = date.today()
+    today = datetime.now(LOCAL_TZ).date()
     if event_at.date() == today:
         return "今日"
     if event_at.date() == today - timedelta(days=1):
@@ -281,7 +281,8 @@ def _apply_dashboard_filters(
     owner_names = _clean_filter_values(filters.get("owner_names"))
     date_layers = _clean_filter_values(filters.get("date_layers"))
     time_truncated = bool(filters.get("time_truncated", True))
-    current_hour = datetime.now().hour
+    local_now = datetime.now(LOCAL_TZ)
+    current_hour = local_now.hour
     owner_map = _load_shop_owner_map() if owner_names else {}
     if not any((brands, sku_codes, product_names, shop_names, owner_names, date_layers)) and not time_truncated:
         return orders
@@ -292,7 +293,7 @@ def _apply_dashboard_filters(
         if (
             time_truncated
             and event_at is not None
-            and event_at.date() == date.today()
+            and event_at.date() == local_now.date()
             and event_at.hour >= current_hour
         ):
             continue
