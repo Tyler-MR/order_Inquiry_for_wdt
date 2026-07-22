@@ -107,6 +107,7 @@ class WdtOrderQueryResponse(BaseModel):
     shops: list[dict[str, Any]]
     products: list[dict[str, Any]]
     hourly: list[dict[str, Any]] = Field(default_factory=list)
+    hourly_series: list[dict[str, Any]] = Field(default_factory=list)
     shop_comparison: list[dict[str, Any]] = Field(default_factory=list)
     product_comparison: list[dict[str, Any]] = Field(default_factory=list)
     owner_comparison: list[dict[str, Any]] = Field(default_factory=list)

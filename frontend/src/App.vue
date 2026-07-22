@@ -64,7 +64,7 @@ function defaultDashboardFilters() {
     productNames: [],
     shopNames: [],
     ownerNames: [],
-    dateLayers: [],
+    dateLayers: ['昨日', '今日'],
     timeTruncated: true,
   }
 }
@@ -272,6 +272,36 @@ const comparisonMeta = computed(() => result.value?.comparison || {})
 const activeTimeFieldLabel = computed(() => timeOptions.find((option) => option.value === Number(dashboardFilters.timeType))?.label.split(' ')[0] || '付款时间')
 const comparisonTodayLabel = computed(() => comparisonMeta.value.today_label || comparisonMeta.value.today || '当前日')
 const comparisonYesterdayLabel = computed(() => comparisonMeta.value.yesterday_label || comparisonMeta.value.yesterday || '上一日')
+const hourlySeries = computed(() => {
+  if (result.value?.hourly_series?.length) return result.value.hourly_series
+  if (!hourlyRows.value.length) return []
+  return [
+    {
+      date: comparisonMeta.value.today,
+      label: comparisonTodayLabel.value,
+      hours: hourlyRows.value.map((item) => ({
+        hour: item.hour,
+        label: item.label,
+        amount: item.today_amount,
+        units: item.today_units,
+        cumulative_amount: item.today_cumulative_amount,
+        cumulative_units: item.today_cumulative_units,
+      })),
+    },
+    {
+      date: comparisonMeta.value.yesterday,
+      label: comparisonYesterdayLabel.value,
+      hours: hourlyRows.value.map((item) => ({
+        hour: item.hour,
+        label: item.label,
+        amount: item.yesterday_amount,
+        units: item.yesterday_units,
+        cumulative_amount: item.yesterday_cumulative_amount,
+        cumulative_units: item.yesterday_cumulative_units,
+      })),
+    },
+  ]
+})
 const comparisonCutoffLabel = computed(() => {
   const cutoff = Number(comparisonMeta.value.cutoff_hour)
   if (!Number.isFinite(cutoff)) return '当前小时'
@@ -293,33 +323,53 @@ function lineGrowth(today, yesterday) {
   return formatGrowth(((current - previous) / previous) * 100)
 }
 
-function buildHourlyLineChart(rows, todayField, yesterdayField, valueType) {
+function buildHourlySeriesChart(seriesRows, valueField, valueType) {
   const width = 760
   const height = 238
   const padX = 30
   const padTop = 16
   const padBottom = 28
+  const palette = ['#1769e0', '#94a3b8', '#f59e0b', '#8b5cf6', '#10b981']
+  const dashPatterns = ['', '6 4', '2 4', '9 4 2 4', '3 3']
+  const normalizedSeries = (Array.isArray(seriesRows) ? seriesRows : []).map((series, seriesIndex) => ({
+    key: series.date || `series-${seriesIndex}`,
+    label: series.label || series.date || `第 ${seriesIndex + 1} 天`,
+    color: palette[seriesIndex % palette.length],
+    dash: dashPatterns[seriesIndex % dashPatterns.length],
+    rows: Array.isArray(series.hours) ? series.hours : [],
+  }))
+  const hours = [...new Set(normalizedSeries.flatMap((series) => series.rows.map((item) => Number(item.hour))))]
+    .filter((hour) => Number.isFinite(hour))
+    .sort((left, right) => left - right)
   const max = Math.max(
-    ...rows.flatMap((item) => [Number(item[todayField] || 0), Number(item[yesterdayField] || 0)]),
+    ...normalizedSeries.flatMap((series) => series.rows.map((item) => Number(item[valueField] || 0))),
     1,
   )
   const plotHeight = height - padTop - padBottom
-  const step = rows.length > 1 ? (width - padX * 2) / (rows.length - 1) : 0
-  const points = rows.map((item, index) => {
-    const today = Number(item[todayField] || 0)
-    const yesterday = Number(item[yesterdayField] || 0)
-    const x = rows.length > 1 ? padX + step * index : width / 2
+  const step = hours.length > 1 ? (width - padX * 2) / (hours.length - 1) : 0
+  const pointsForSeries = (series) => hours.map((hour, index) => {
+    const item = series.rows.find((row) => Number(row.hour) === hour) || { hour, label: `${hour}:00` }
+    const value = Number(item[valueField] || 0)
+    const x = hours.length > 1 ? padX + step * index : width / 2
     return {
-      hour: item.hour,
+      hour,
       label: item.label,
       x,
-      today,
-      yesterday,
-      todayY: padTop + plotHeight - (today / max) * plotHeight,
-      yesterdayY: padTop + plotHeight - (yesterday / max) * plotHeight,
-      showPoint: index % 3 === 0 || index === rows.length - 1,
+      value,
+      y: padTop + plotHeight - (value / max) * plotHeight,
+      showPoint: index % 3 === 0 || index === hours.length - 1,
     }
   })
+  const series = normalizedSeries.map((item) => ({ ...item, points: pointsForSeries(item) }))
+  const primaryPoints = series[0]?.points || []
+  const secondaryPoints = series[1]?.points || []
+  const points = primaryPoints.map((point, index) => ({
+    ...point,
+    today: point.value,
+    yesterday: secondaryPoints[index]?.value || 0,
+    todayY: point.y,
+    yesterdayY: secondaryPoints[index]?.y || padTop + plotHeight,
+  }))
   return {
     width,
     height,
@@ -327,12 +377,11 @@ function buildHourlyLineChart(rows, todayField, yesterdayField, valueType) {
     maxLabel: formatLineValue(max, valueType),
     midLabel: formatLineValue(max / 2, valueType),
     zeroLabel: formatLineValue(0, valueType),
+    series,
     points,
-    polylineToday: points.map((point) => `${point.x},${point.todayY}`).join(' '),
-    polylineYesterday: points.map((point) => `${point.x},${point.yesterdayY}`).join(' '),
-    xLabels: points.map((point) => ({
+    xLabels: primaryPoints.map((point) => ({
       hour: point.hour,
-      label: point.hour % 3 === 0 || point.hour === points.at(-1)?.hour ? point.label.replace(':00', '') : '',
+      label: point.hour % 3 === 0 || point.hour === primaryPoints.at(-1)?.hour ? point.label.replace(':00', '') : '',
     })),
   }
 }
@@ -343,28 +392,28 @@ const hourlyLineCharts = computed(() => [
     title: '累计实收金额',
     subtitle: `24小时对比${comparisonYesterdayLabel.value}增长`,
     unit: '元',
-    chart: buildHourlyLineChart(hourlyRows.value, 'today_cumulative_amount', 'yesterday_cumulative_amount', 'amount'),
+    chart: buildHourlySeriesChart(hourlySeries.value, 'cumulative_amount', 'amount'),
   },
   {
     id: 'sales-hourly',
     title: '每小时实收金额',
     subtitle: `24小时对比${comparisonYesterdayLabel.value}波动`,
     unit: '元',
-    chart: buildHourlyLineChart(hourlyRows.value, 'today_amount', 'yesterday_amount', 'amount'),
+    chart: buildHourlySeriesChart(hourlySeries.value, 'amount', 'amount'),
   },
   {
     id: 'product-cumulative',
     title: '累计商品数量',
     subtitle: `产品维度 · 24小时对比${comparisonYesterdayLabel.value}增长`,
     unit: '件',
-    chart: buildHourlyLineChart(hourlyRows.value, 'today_cumulative_units', 'yesterday_cumulative_units', 'units'),
+    chart: buildHourlySeriesChart(hourlySeries.value, 'cumulative_units', 'units'),
   },
   {
     id: 'product-hourly',
     title: '每小时商品数量',
     subtitle: `产品维度 · 24小时对比${comparisonYesterdayLabel.value}波动`,
     unit: '件',
-    chart: buildHourlyLineChart(hourlyRows.value, 'today_units', 'yesterday_units', 'units'),
+    chart: buildHourlySeriesChart(hourlySeries.value, 'units', 'units'),
   },
 ])
 const expandedLineChart = computed(() => hourlyLineCharts.value.find((line) => line.id === expandedLineChartId.value) || null)
@@ -398,8 +447,8 @@ function pointTooltipY(point) {
   return Math.min(Math.max(pointTop - 70, 3), 157)
 }
 
-const shopComparisonRows = computed(() => (result.value?.shop_comparison || []).slice(0, 8))
-const productComparisonRows = computed(() => (result.value?.product_comparison || []).slice(0, 8))
+const shopComparisonRows = computed(() => result.value?.shop_comparison || [])
+const productComparisonRows = computed(() => result.value?.product_comparison || [])
 const ownerComparisonRows = computed(() => result.value?.owner_comparison || [])
 const hiddenPddOwnerName = '淘宝 李世豪'
 const isPddDashboard = computed(() => dashboardFilters.platformId === '39')
@@ -583,8 +632,8 @@ onBeforeUnmount(() => {
 
       <section class="tableau-grid">
         <article class="panel hourly-panel tableau-line-panel">
-          <div class="panel-heading"><div><h3>24 小时{{ activeTimeFieldLabel }}折线</h3><p>{{ comparisonMeta.today || '-' }} 与 {{ comparisonMeta.yesterday || '-' }} 的同小时趋势</p></div></div>
-          <div class="hourly-legend"><span><i class="legend-swatch today"></i>{{ comparisonTodayLabel }}</span><span><i class="legend-swatch yesterday"></i>{{ comparisonYesterdayLabel }}</span><span class="legend-hint">{{ activeTimeFieldLabel }} · {{ comparisonCutoffLabel }}</span></div>
+          <div class="panel-heading"><div><h3>24 小时{{ activeTimeFieldLabel }}折线</h3><p>{{ hourlySeries.length || 2 }} 个日期的同小时趋势</p></div></div>
+          <div class="hourly-legend"><span v-for="series in (hourlyLineCharts[0]?.chart.series || [])" :key="`legend-${series.key}`"><i class="legend-swatch" :style="{ background: series.color }"></i>{{ series.label }}</span><span class="legend-hint">{{ activeTimeFieldLabel }} · {{ comparisonCutoffLabel }}</span></div>
           <div v-if="hourlyRows.length" class="hourly-line-grid">
             <article v-for="line in hourlyLineCharts" :key="line.id" class="hourly-line-card">
               <div class="line-card-heading"><div><strong>{{ line.title }}</strong><span>{{ line.subtitle }}</span></div><div class="line-card-actions"><em>{{ line.unit }}</em><button class="chart-zoom-button" type="button" :aria-label="`放大${line.title}`" :title="`放大${line.title}`" @click="openLineChart(line)"><Maximize2 :size="14" /></button></div></div>
@@ -592,13 +641,13 @@ onBeforeUnmount(() => {
                 <div class="line-y-axis"><span>{{ line.chart.maxLabel }}</span><span>{{ line.chart.midLabel }}</span><span>{{ line.chart.zeroLabel }}</span></div>
                 <svg :viewBox="`0 0 ${line.chart.width} ${line.chart.height}`" preserveAspectRatio="none" role="img" :aria-label="line.title">
                   <line v-for="grid in [0, 1, 2]" :key="grid" x1="30" :y1="16 + grid * 97" x2="730" :y2="16 + grid * 97" class="line-grid" />
-                  <polyline :points="line.chart.polylineYesterday" class="comparison-line yesterday" />
-                  <polyline :points="line.chart.polylineToday" class="comparison-line today" />
-                  <g v-for="point in line.chart.points" :key="point.hour">
-                    <template v-if="point.showPoint">
-                      <circle :cx="point.x" :cy="point.yesterdayY" r="2.6" class="line-point yesterday" />
-                      <circle :cx="point.x" :cy="point.todayY" r="2.6" class="line-point today" />
-                      <title>{{ point.label }}：{{ comparisonTodayLabel }} {{ formatLineValue(point.today, line.id.includes('product') ? 'units' : 'amount') }} / {{ comparisonYesterdayLabel }} {{ formatLineValue(point.yesterday, line.id.includes('product') ? 'units' : 'amount') }}</title>
+                  <polyline v-for="series in line.chart.series" :key="`${line.id}-${series.key}`" :points="series.points.map((point) => `${point.x},${point.y}`).join(' ')" class="comparison-line" :style="{ stroke: series.color, strokeDasharray: series.dash || 'none' }" />
+                  <g v-for="series in line.chart.series" :key="`${line.id}-points-${series.key}`">
+                    <template v-for="point in series.points" :key="`${series.key}-${point.hour}`">
+                      <template v-if="point.showPoint">
+                        <circle :cx="point.x" :cy="point.y" r="2.6" class="line-point" :style="{ stroke: series.color }" />
+                        <title>{{ point.label }}：{{ series.label }} {{ formatLineValue(point.value, line.id.includes('product') ? 'units' : 'amount') }}</title>
+                      </template>
                     </template>
                   </g>
                 </svg>
@@ -614,13 +663,12 @@ onBeforeUnmount(() => {
       <div v-if="expandedLineChart" class="chart-modal" role="dialog" aria-modal="true" :aria-label="`${expandedLineChart.title}放大看板`" @click.self="closeExpandedLineChart">
         <section class="chart-modal-dialog">
           <div class="chart-modal-heading"><div><span class="eyebrow">节点明细</span><h3>{{ expandedLineChart.title }}</h3><p>{{ expandedLineChart.subtitle }} · {{ expandedLineChart.unit }}</p></div><button class="modal-close-button" type="button" aria-label="关闭放大看板" title="关闭" @click="closeExpandedLineChart"><X :size="18" /></button></div>
-          <div class="hourly-legend modal-legend"><span><i class="legend-swatch today"></i>{{ comparisonTodayLabel }}</span><span><i class="legend-swatch yesterday"></i>{{ comparisonYesterdayLabel }}</span><span class="legend-hint">点击右上角按钮或按 Esc 关闭</span></div>
+          <div class="hourly-legend modal-legend"><span v-for="series in (expandedLineChart.chart.series || [])" :key="`modal-legend-${series.key}`"><i class="legend-swatch" :style="{ background: series.color }"></i>{{ series.label }}</span><span class="legend-hint">点击右上角按钮或按 Esc 关闭</span></div>
           <div class="line-chart modal-line-chart">
             <div class="line-y-axis"><span>{{ expandedLineChart.chart.maxLabel }}</span><span>{{ expandedLineChart.chart.midLabel }}</span><span>{{ expandedLineChart.chart.zeroLabel }}</span></div>
             <svg :viewBox="`0 0 ${expandedLineChart.chart.width} ${expandedLineChart.chart.height}`" preserveAspectRatio="none" role="img" :aria-label="expandedLineChart.title">
               <line v-for="grid in [0, 1, 2]" :key="grid" x1="30" :y1="16 + grid * 97" x2="730" :y2="16 + grid * 97" class="line-grid" />
-              <polyline :points="expandedLineChart.chart.polylineYesterday" class="comparison-line yesterday" />
-              <polyline :points="expandedLineChart.chart.polylineToday" class="comparison-line today" />
+              <polyline v-for="series in expandedLineChart.chart.series" :key="`modal-${series.key}`" :points="series.points.map((point) => `${point.x},${point.y}`).join(' ')" class="comparison-line" :style="{ stroke: series.color, strokeDasharray: series.dash || 'none' }" />
               <g v-for="point in expandedLineChart.chart.points" :key="point.hour" tabindex="0" role="button" :aria-label="`${point.label} ${comparisonTodayLabel} ${formatLineValue(point.today, lineValueType(expandedLineChart))}，${comparisonYesterdayLabel} ${formatLineValue(point.yesterday, lineValueType(expandedLineChart))}，增长 ${lineGrowth(point.today, point.yesterday)}`" @mouseenter="showLinePoint(point)" @focus="showLinePoint(point)" @click="showLinePoint(point)">
                 <circle :cx="point.x" :cy="point.yesterdayY" r="10" class="line-hit-area" @mouseenter="showLinePoint(point)" @click.stop="showLinePoint(point)" />
                 <circle :cx="point.x" :cy="point.yesterdayY" r="3.5" :class="['line-point yesterday', { active: activeLinePointHour === point.hour }]" />
@@ -671,7 +719,7 @@ onBeforeUnmount(() => {
         <article class="panel ranking-panel">
           <div class="panel-heading"><div><h3>店铺排行</h3><p>按成交金额排序</p></div><Store :size="18" class="panel-icon" /></div>
           <div class="ranking-list">
-            <div v-for="(shop, index) in result.shops.slice(0, 8)" :key="`${shop.shop_id}-${shop.shop_name}`" :data-shop-name="shop.shop_name" :class="['ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.shopNames.includes(shop.shop_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('shop', shop.shop_name)" @keydown.enter.prevent="selectDashboardDimension('shop', shop.shop_name)" @keydown.space.prevent="selectDashboardDimension('shop', shop.shop_name)">
+            <div v-for="(shop, index) in result.shops" :key="`${shop.shop_id}-${shop.shop_name}`" :data-shop-name="shop.shop_name" :class="['ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.shopNames.includes(shop.shop_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('shop', shop.shop_name)" @keydown.enter.prevent="selectDashboardDimension('shop', shop.shop_name)" @keydown.space.prevent="selectDashboardDimension('shop', shop.shop_name)">
               <b>{{ index + 1 }}</b><div class="ranking-main"><strong :title="shop.shop_name">{{ shop.shop_name }}</strong><div class="bar-track"><i :style="{ width: barWidth(shop.order_amount, maxShopAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatMoney(shop.order_amount) }}</strong><span>{{ formatNumber(shop.order_count) }} 单 · {{ shopShare(shop.order_amount) }}</span></div>
             </div>
             <div v-if="!result.shops.length" class="mini-empty">暂无店铺数据</div>
@@ -681,7 +729,7 @@ onBeforeUnmount(() => {
         <article class="panel ranking-panel">
           <div class="panel-heading"><div><h3>商品排行</h3><p>按商品行金额排序</p></div><Package :size="18" class="panel-icon" /></div>
           <div class="ranking-list">
-            <div v-for="(product, index) in result.products.slice(0, 8)" :key="`${product.product_no}-${product.spec_name}`" :data-product-name="product.product_name" :class="['ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.productNames.includes(product.product_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('product', product.product_name)" @keydown.enter.prevent="selectDashboardDimension('product', product.product_name)" @keydown.space.prevent="selectDashboardDimension('product', product.product_name)">
+            <div v-for="(product, index) in result.products" :key="`${product.product_no}-${product.spec_name}`" :data-product-name="product.product_name" :class="['ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.productNames.includes(product.product_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('product', product.product_name)" @keydown.enter.prevent="selectDashboardDimension('product', product.product_name)" @keydown.space.prevent="selectDashboardDimension('product', product.product_name)">
               <b>{{ index + 1 }}</b><div class="ranking-main"><strong :title="product.product_name">{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small><div class="bar-track"><i class="orange" :style="{ width: barWidth(product.order_amount, maxProductAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatUnits(product.units) }} 件</strong><span>{{ formatMoney(product.order_amount) }}</span></div>
             </div>
             <div v-if="!result.products.length" class="mini-empty">暂无商品数据</div>

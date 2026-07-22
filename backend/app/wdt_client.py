@@ -501,6 +501,7 @@ def build_analysis(
     hourly_comparison = {
         hour: _new_comparison_entry(hour=hour, label=f"{hour:02d}:00") for hour in range(24)
     }
+    hourly_by_date: dict[str, dict[str, Any]] = {}
     comparison_totals = _new_comparison_entry()
     owner_map = _load_shop_owner_map()
     product_master = _load_product_master_map()
@@ -614,6 +615,34 @@ def build_analysis(
         day["units"] += order_units
         shop["units"] += order_units
 
+        if event_at:
+            event_date_key = event_at.date().isoformat()
+            event_cutoff_hour = local_current_hour if time_truncated else 24
+            if event_at.hour < event_cutoff_hour:
+                date_hours = hourly_by_date.setdefault(
+                    event_date_key,
+                    {
+                        "date": event_date_key,
+                        "label": comparison_day_labels.get(
+                            (local_today - event_at.date()).days,
+                            event_date_key,
+                        ),
+                        "cutoff_hour": event_cutoff_hour,
+                        "hours": {
+                            hour: {
+                                "hour": hour,
+                                "label": f"{hour:02d}:00",
+                                "amount": 0.0,
+                                "units": 0.0,
+                            }
+                            for hour in range(event_cutoff_hour)
+                        },
+                    },
+                )
+                hour_bucket = date_hours["hours"][event_at.hour]
+                hour_bucket["amount"] += amount
+                hour_bucket["units"] += order_units
+
         if comparison_bucket and event_at:
             comparison_shop = shop_comparison.setdefault(
                 shop_key,
@@ -704,6 +733,27 @@ def build_analysis(
             cumulative_today_units,
             cumulative_yesterday_units,
         )
+    hourly_series = []
+    for date_key in sorted(hourly_by_date, reverse=True):
+        date_entry = hourly_by_date[date_key]
+        cumulative_amount = 0.0
+        cumulative_units = 0.0
+        hours = []
+        for hour in sorted(date_entry["hours"]):
+            item = dict(date_entry["hours"][hour])
+            cumulative_amount += item["amount"]
+            cumulative_units += item["units"]
+            item["cumulative_amount"] = cumulative_amount
+            item["cumulative_units"] = cumulative_units
+            hours.append(item)
+        hourly_series.append(
+            {
+                "date": date_entry["date"],
+                "label": date_entry["label"],
+                "cutoff_hour": date_entry["cutoff_hour"],
+                "hours": hours,
+            }
+        )
     shop_rows.sort(key=lambda item: item["order_amount"], reverse=True)
     product_rows.sort(key=lambda item: item["order_amount"], reverse=True)
     shop_comparison_rows.sort(key=lambda item: (item["today_amount"], item["yesterday_amount"]), reverse=True)
@@ -751,6 +801,7 @@ def build_analysis(
         "shops": shop_rows,
         "products": product_rows,
         "hourly": hourly_rows,
+        "hourly_series": hourly_series,
         "shop_comparison": shop_comparison_rows,
         "product_comparison": product_comparison_rows,
         "owner_comparison": owner_comparison_rows,
