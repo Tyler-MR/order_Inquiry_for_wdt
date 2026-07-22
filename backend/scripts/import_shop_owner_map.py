@@ -33,9 +33,8 @@ def load_rows(path: Path) -> list[dict[str, str]]:
         platform = str(item.get("platform") or "").strip()
         if not shop_name or not owner_name:
             raise ValueError(f"第 {index} 行缺少店铺名称或负责人")
-        previous = rows.get(shop_name)
-        if previous and previous["owner_name"] != owner_name:
-            raise ValueError(f"店铺归一化后重复且负责人不同：{shop_name}")
+        # 与 pandas.drop_duplicates(subset=["店铺名称"], keep="last") 一致：
+        # 同一归一化店铺重复出现时，以 Excel 最后一次出现的负责人为准。
         rows[shop_name] = {
             "shop_name": shop_name,
             "owner_name": owner_name,
