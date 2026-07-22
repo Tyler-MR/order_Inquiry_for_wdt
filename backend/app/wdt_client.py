@@ -212,20 +212,19 @@ def _first_number(record: dict[str, Any], fields: tuple[str, ...]) -> float:
 
 
 def _order_amount(order: dict[str, Any]) -> float:
-    return _first_number(order, ("real_amount", "receivable", "paid"))
+    """Return the order total calculated from its goods-level paid amounts."""
+    goods_list = order.get("goods_list") or []
+    return sum(_goods_amount(goods) for goods in goods_list)
 
 
 def _goods_units(goods: dict[str, Any]) -> float:
     return _first_number(goods, ("num", "suite_num"))
 
 
-def _goods_amount(goods: dict[str, Any], units: float) -> float:
-    # 优先使用旺店通返回的商品行实付金额，缺失时再用单价乘数量估算。
-    for field in ("paid", "share_amount", "oms_purchase_amount"):
-        if goods.get(field) not in (None, ""):
-            return _to_number(goods.get(field))
-    unit_price = _first_number(goods, ("share_price", "price"))
-    return unit_price * units
+def _goods_amount(goods: dict[str, Any]) -> float:
+    # 所有看板金额统一使用旺店通返回的商品行实付金额。
+    """Return only the goods.paid amount; missing values contribute zero."""
+    return _to_number(goods.get("paid"))
 
 
 def _order_date(order: dict[str, Any], time_type: int) -> str:
@@ -473,7 +472,7 @@ def build_analysis(
             elif event_at.date() == comparison_previous_date:
                 comparison_bucket = "yesterday"
         order_amount += amount
-        paid_amount += _first_number(order, ("paid", "real_amount", "receivable"))
+        paid_amount += amount
 
         day = daily[date_key]
         day["date"] = date_key
@@ -501,7 +500,7 @@ def build_analysis(
         order_units = 0.0
         for goods in goods_list:
             units = _goods_units(goods)
-            line_amount = _goods_amount(goods, units)
+            line_amount = _goods_amount(goods)
             order_units += units
             product_no, product_name, spec_name = _product_info(goods)
             product_key = f"{product_no}|{product_name}|{spec_name}"
