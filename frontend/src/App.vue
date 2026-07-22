@@ -1,10 +1,8 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import {
   BarChart3,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   CircleAlert,
   Database,
   Download,
@@ -42,46 +40,6 @@ const timeOptions = [
 ]
 
 const dateLayerOptions = ['今日', '昨日', '前天']
-
-const fieldLabels = {
-  'trade.trade_no': '订单号',
-  'trade.trade_id': '订单 ID',
-  'trade.shop_name': '店铺',
-  'trade.platform_id': '平台 ID',
-  'trade.trade_time': '交易时间',
-  'trade.created': '创建时间',
-  'trade.trade_status': '订单状态',
-  'trade.real_amount': '订单金额',
-  'trade.receivable': '应收金额',
-  'trade.paid': '已付金额',
-  'trade.goods_count': '商品数',
-  'trade.logistics_name': '物流公司',
-  'trade.logistics_no': '物流单号',
-  'goods.goods_no': '货品编码',
-  'goods.goods_name': '商品名称',
-  'goods.spec_name': '规格',
-  'goods.num': '购买数量',
-  'goods.price': '商品单价',
-  'goods.paid': '商品实付',
-  'goods.refund_status': '退款状态',
-  'logistics.logistics_name': '物流公司',
-  'logistics.logistics_no': '物流单号',
-}
-
-const preferredColumns = [
-  'trade.trade_no',
-  'trade.shop_name',
-  'trade.trade_time',
-  'goods.goods_no',
-  'goods.goods_name',
-  'goods.spec_name',
-  'goods.num',
-  'goods.paid',
-  'trade.real_amount',
-  'trade.trade_status',
-  'logistics.logistics_name',
-  'logistics.logistics_no',
-]
 
 function toDateInput(date) {
   const year = date.getFullYear()
@@ -129,8 +87,6 @@ const loading = ref(false)
 const csvDownloading = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
-const detailKeyword = ref('')
-const detailPage = ref(1)
 const lastQueriedAt = ref('')
 const lastSyncedAt = ref('')
 const sseStatus = ref('connecting')
@@ -138,7 +94,6 @@ const expandedLineChartId = ref('')
 const activeLinePointHour = ref(null)
 const dashboardFiltersDirty = ref(false)
 let orderEventSource = null
-const PREVIEW_PAGE_SIZE = 120
 
 function loadFilters() {
   try {
@@ -201,13 +156,12 @@ function buildDashboardRequestBody(dateWindow, includeRows = false) {
   }
 }
 
-async function queryOrders({ silent = false, includeRows = true } = {}) {
+async function queryOrders({ silent = false, includeRows = false } = {}) {
   if (loading.value) return null
 
   if (!silent) {
     errorMessage.value = ''
     successMessage.value = ''
-    detailKeyword.value = ''
   }
 
   const dateWindow = recentDateWindow()
@@ -226,7 +180,7 @@ async function queryOrders({ silent = false, includeRows = true } = {}) {
       successMessage.value = data.order_count
         ? `已从本地 MySQL 加载 ${formatNumber(data.order_count)} 笔订单，覆盖 ${data.source_window_count} 个日窗口。`
         : '读取完成，当前时间范围没有匹配订单。'
-      if (filters.exportAfterQuery && data.rows?.length) downloadCsv()
+      if (filters.exportAfterQuery) downloadCsv()
     }
     return data
   } catch (error) {
@@ -318,49 +272,10 @@ function formatDateTime(value) {
   return String(value).replace('T', ' ').replace(/:00$/, '')
 }
 
-function formatCell(column, value) {
-  if (value === null || value === undefined || value === '') return '-'
-  if (column.includes('amount') || column.endsWith('.paid') || column.endsWith('.price')) {
-    const number = Number(value)
-    return Number.isFinite(number) ? formatMoney(number) : String(value)
-  }
-  if (column.includes('time') || column.endsWith('.created')) return formatDateTime(value)
-  return String(value)
-}
-
-function columnLabel(column) {
-  return fieldLabels[column] || column.replace('trade.', '订单 · ').replace('goods.', '商品 · ').replace('logistics.', '物流 · ')
-}
-
 const summary = computed(() => result.value?.summary || {})
-const tableColumns = computed(() => {
-  const columns = result.value?.columns || []
-  const selected = preferredColumns.filter((column) => columns.includes(column))
-  return (selected.length ? selected : columns).slice(0, 12)
-})
-const filteredDetailRows = computed(() => {
-  const rows = result.value?.rows || []
-  const keyword = detailKeyword.value.trim().toLowerCase()
-  return keyword
-    ? rows.filter((row) => tableColumns.value.some((column) => String(row[column] ?? '').toLowerCase().includes(keyword)))
-    : rows
-})
-const detailPageCount = computed(() => Math.max(1, Math.ceil(filteredDetailRows.value.length / PREVIEW_PAGE_SIZE)))
-const filteredRows = computed(() => {
-  const safePage = Math.min(detailPage.value, detailPageCount.value)
-  const start = (safePage - 1) * PREVIEW_PAGE_SIZE
-  return filteredDetailRows.value.slice(start, start + PREVIEW_PAGE_SIZE)
-})
 const hasOrders = computed(() => Number(summary.value.order_count || 0) > 0)
 const maxShopAmount = computed(() => Math.max(...(result.value?.shops || []).map((item) => Number(item.order_amount || 0)), 1))
 const maxProductAmount = computed(() => Math.max(...(result.value?.products || []).map((item) => Number(item.order_amount || 0)), 1))
-
-watch([detailKeyword, result], () => {
-  detailPage.value = 1
-})
-watch(detailPageCount, (pageCount) => {
-  if (detailPage.value > pageCount) detailPage.value = pageCount
-})
 
 function formatGrowth(value) {
   const number = Number(value)
@@ -701,7 +616,7 @@ onBeforeUnmount(() => {
       <div class="filter-owner-row">
         <section class="tableau-filter-strip">
         <div class="filter-strip-heading">
-          <div><span class="eyebrow">看板筛选器</span><h3>统一筛选条件</h3><p>一组筛选器统一联动销售额、产品维度、折线图、排名和订单明细。</p></div>
+          <div><span class="eyebrow">看板筛选器</span><h3>统一筛选条件</h3><p>一组筛选器统一联动销售额、产品维度、折线图和排名。</p></div>
           <div class="filter-strip-actions"><span class="filter-count">已启用 {{ activeDashboardFilterCount }} 项</span><span v-if="dashboardFiltersDirty" class="filter-pending">待查询</span><button class="primary-button compact-button" type="button" :disabled="loading" @click="applyDashboardFilters"><Search :size="14" />按条件查询</button><button class="text-button" type="button" @click="clearDashboardFilters">清除看板筛选</button></div>
         </div>
           <div class="unified-filter-grid">
@@ -839,27 +754,13 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
-      <section class="detail-panel panel">
-        <div class="panel-heading detail-heading"><div><h3>订单明细预览</h3><p v-if="result.rows_complete !== false">当前筛选 {{ formatNumber(filteredDetailRows.length) }} 行，第 {{ formatNumber(detailPage) }} / {{ formatNumber(detailPageCount) }} 页；完整 {{ formatNumber(result.row_count) }} 行可通过 CSV 下载。</p><p v-else>当前看板已使用快速预览，显示 {{ formatNumber(filteredDetailRows.length) }} 行；共 {{ formatNumber(result.row_count) }} 行，点击“下载 CSV”会加载完整明细。</p></div><div class="detail-tools"><label class="search-box"><Search :size="16" /><input v-model="detailKeyword" type="search" placeholder="搜索订单号、店铺或商品" /></label><button class="secondary-button" type="button" :disabled="csvDownloading" @click="downloadCsv()"><Loader2 v-if="csvDownloading" class="spin" :size="16" /><Download v-else :size="16" />{{ csvDownloading ? '正在生成 CSV…' : '下载 CSV' }}</button></div></div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th v-for="column in tableColumns" :key="column">{{ columnLabel(column) }}</th></tr></thead>
-            <tbody>
-              <tr v-for="(row, index) in filteredRows" :key="`${row['trade.trade_id'] || row['trade.trade_no']}-${index}`">
-                <td v-for="column in tableColumns" :key="column" :title="formatCell(column, row[column])">{{ formatCell(column, row[column]) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="table-footer"><span>表格预览列 {{ tableColumns.length }} / CSV 字段 {{ result.columns.length }}</span><div class="table-pagination"><button class="table-page-button" type="button" :disabled="detailPage <= 1" aria-label="上一页" @click="detailPage -= 1"><ChevronLeft :size="15" /></button><span>{{ detailPage }} / {{ detailPageCount }}</span><button class="table-page-button" type="button" :disabled="detailPage >= detailPageCount" aria-label="下一页" @click="detailPage += 1"><ChevronRight :size="15" /></button></div><span>已自动合并同一订单的商品明细</span></div>
-      </section>
     </template>
 
     <section v-else-if="result && !hasOrders" class="empty-state panel">
       <Table2 :size="40" /><strong>当前条件没有匹配订单</strong><span>可以调整日期或平台后重新查询。</span>
     </section>
     <section v-else class="empty-state panel initial-empty">
-      <div class="empty-icon"><BarChart3 :size="28" /></div><strong>准备开始分析</strong><span>选择近三天范围后点击“查询订单”，这里会展示 24 小时折线、店铺排行、商品排行和订单明细。</span>
+      <div class="empty-icon"><BarChart3 :size="28" /></div><strong>准备开始分析</strong><span>选择近三天范围后点击“查询订单”，这里会展示 24 小时折线、店铺排行和商品排行。</span>
     </section>
   </main>
 </template>
