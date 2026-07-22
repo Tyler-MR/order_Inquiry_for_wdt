@@ -368,3 +368,79 @@ tbody tr:hover td { background: #f8fbff; }
   .modal-line-chart { min-height: 290px; }
   .modal-line-chart svg { height: 250px; }
 }
+
+/* Tableau reference layout: a quiet canvas, dense text tables, and two series charts. */
+.app-shell { width: min(100% - 36px, 1780px); padding-top: 18px; }
+.app-header { margin: -18px calc((min(100% - 36px, 1780px) - 100vw) / 2) 18px; padding: 10px max(18px, calc((100vw - min(100% - 36px, 1780px)) / 2 + 18px)); background: #0b5874; }
+.brand-block strong, .brand-block span, .header-status, .status-time { color: #ffffff; }
+.brand-block span, .status-time { opacity: 0.82; }
+.brand-mark { width: 30px; height: 30px; border-radius: 2px; background: #0a789b; }
+.tableau-workspace { overflow: hidden; border: 1px solid #d2d6da; background: #ffffff; box-shadow: none; }
+.tableau-view-tabs { display: flex; align-items: flex-end; min-height: 32px; padding-left: 12px; border-bottom: 1px solid #c8cdd1; background: #f4f4f4; }
+.tableau-view-tabs button { min-height: 31px; padding: 5px 14px 6px; border: 0; border-right: 1px solid #d1d4d6; color: #555b60; background: #eeeeee; font-size: 12px; }
+.tableau-view-tabs button.active { color: #1f2529; background: #ffffff; box-shadow: inset 0 -2px 0 #0b5874; }
+.tableau-filter-bar { display: grid; grid-template-columns: repeat(8, minmax(100px, 1fr)) auto; align-items: end; gap: 9px; padding: 12px 14px 10px; border-bottom: 1px solid #d7dadd; background: #ffffff; }
+.tableau-filter-field { display: grid; min-width: 0; gap: 4px; }
+.tableau-filter-field > span { color: #50575c; font-size: 10px; }
+.tableau-filter-field input, .tableau-filter-field select, .tableau-filter-field .filter-dropdown summary { width: 100%; height: 26px; padding: 0 7px; border: 1px solid #aeb4b8; border-radius: 2px; color: #3a4145; background: #ffffff; font-size: 10px; }
+.tableau-filter-field input:focus, .tableau-filter-field select:focus, .tableau-filter-field .filter-dropdown[open] summary { border-color: #0b5874; outline: 0; box-shadow: none; }
+.tableau-filter-field .filter-dropdown { min-width: 0; }
+.tableau-filter-field .filter-menu { top: 30px; border-radius: 2px; font-size: 10px; }
+.tableau-filter-actions { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.tableau-filter-actions > span { color: #6c7378; font-size: 10px; }
+.tableau-query-button, .tableau-reset-button { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 9px; border: 1px solid #9da5aa; border-radius: 2px; color: #ffffff; background: #0b5874; font-size: 10px; }
+.tableau-reset-button { color: #4e555a; background: #ffffff; }
+.tableau-canvas { display: grid; grid-template-columns: minmax(310px, 0.48fr) minmax(560px, 1.52fr); gap: 14px; padding: 14px; background: #ffffff; }
+.tableau-column { min-width: 0; display: grid; gap: 14px; align-content: start; }
+.tableau-sheet, .tableau-chart-sheet { min-width: 0; overflow: hidden; border: 1px solid #cfd3d6; border-radius: 0; background: #ffffff; box-shadow: none; }
+.tableau-sheet { max-height: 390px; overflow: auto; }
+.date-total-sheet { max-height: none; }
+.tableau-sheet-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 8px 9px 6px; }
+.tableau-sheet h2, .tableau-sheet-heading h2, .tableau-chart-sheet h2 { margin: 0; color: #333a3e; font-size: 14px; font-weight: 500; }
+.tableau-sheet-heading span { color: #777e83; font-size: 10px; white-space: nowrap; }
+.tableau-data-table { width: 100%; min-width: 0; border-collapse: collapse; font-size: 10px; }
+.tableau-data-table th { position: sticky; top: 0; z-index: 1; padding: 6px 8px; border-bottom: 1px solid #cfd3d6; color: #5d6469; background: #ffffff; font-size: 10px; font-weight: 500; text-align: right; white-space: nowrap; }
+.tableau-data-table th:first-child, .tableau-data-table td:first-child { text-align: left; }
+.tableau-data-table td { max-width: 235px; padding: 6px 8px; border-bottom: 1px solid #e7e9ea; color: #41484d; overflow: hidden; font-size: 10px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.tableau-data-table tbody tr:nth-child(even) td { background: #f3f3f3; }
+.tableau-data-table tbody tr:hover td { background: #e4f0f4; }
+.tableau-data-table tbody tr { cursor: pointer; }
+.tableau-data-table td strong, .tableau-data-table td small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tableau-data-table td strong { color: #3b4246; font-weight: 500; }
+.tableau-data-table td small { margin-top: 2px; color: #899095; font-size: 9px; }
+.tableau-data-table td.positive { color: #4d9b68; font-weight: 500; }
+.tableau-data-table td.negative { color: #d26969; font-weight: 500; }
+.tableau-data-table td.neutral { color: #8a9094; }
+.tableau-chart-sheet { padding: 0 10px 10px; }
+.tableau-chart-sheet-wide { grid-column: 1 / -1; }
+.tableau-chart-sheet .tableau-sheet-heading { padding-left: 2px; padding-right: 2px; }
+.tableau-chart-frame { position: relative; min-height: 300px; padding-left: 38px; }
+.tableau-chart-frame svg { display: block; width: 100%; height: 270px; overflow: visible; }
+.tableau-axis-labels { position: absolute; top: 10px; bottom: 31px; left: 0; display: flex; flex-direction: column; justify-content: space-between; color: #777e83; font-size: 9px; }
+.tableau-grid-line { stroke: #e5e7e8; stroke-width: 1; }
+.tableau-comparison-line { fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.tableau-point-label { fill: #4d555a; font-size: 9px; }
+.tableau-x-axis { display: grid; grid-template-columns: repeat(18, minmax(0, 1fr)); height: 22px; color: #777e83; font-size: 9px; text-align: center; }
+.product-table-sheet { max-height: 600px; }
+.sales-canvas .tableau-column-left { max-height: 930px; overflow: auto; }
+.product-canvas .tableau-column-left { max-height: 650px; overflow: auto; }
+
+@media (max-width: 1120px) {
+  .tableau-filter-bar { grid-template-columns: repeat(4, minmax(100px, 1fr)); }
+  .tableau-filter-actions { grid-column: 1 / -1; justify-content: flex-end; }
+  .tableau-canvas { grid-template-columns: minmax(260px, 0.8fr) minmax(420px, 1.2fr); }
+}
+
+@media (max-width: 760px) {
+  .app-shell { width: calc(100% - 20px); padding-top: 10px; }
+  .app-header { margin: -10px -10px 12px; padding: 9px 12px; }
+  .header-status { flex-wrap: wrap; font-size: 10px; }
+  .tableau-filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tableau-filter-actions { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; }
+  .tableau-canvas { grid-template-columns: 1fr; padding: 8px; }
+  .tableau-chart-sheet-wide { grid-column: auto; }
+  .sales-canvas .tableau-column-left, .product-canvas .tableau-column-left { max-height: none; overflow: visible; }
+  .tableau-sheet { max-height: 360px; }
+  .tableau-chart-frame { min-height: 260px; }
+  .tableau-chart-frame svg { height: 230px; }
+}

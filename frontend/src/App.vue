@@ -70,6 +70,7 @@ function defaultDashboardFilters() {
 }
 
 const dashboardFilters = reactive(defaultDashboardFilters())
+const activeDashboardTab = ref('sales')
 const result = ref(null)
 const loading = ref(false)
 const csvDownloading = ref(false)
@@ -479,6 +480,36 @@ const maxShopComparisonAmount = computed(() => Math.max(...shopComparisonRows.va
 const maxProductComparisonAmount = computed(() => Math.max(...productComparisonRows.value.map((item) => Number(item.today_amount || 0)), 1))
 const maxOwnerComparisonAmount = computed(() => Math.max(...visibleOwnerComparisonRows.value.map((item) => Number(item.today_amount || 0)), 1))
 
+function shortDate(value) {
+  if (!value) return '-'
+  const match = String(value).match(/(\d{4})-(\d{1,2})-(\d{1,2})/)
+  return match ? `${Number(match[2])}.${String(match[3]).padStart(2, '0')}` : String(value)
+}
+
+function seriesIndexColor(series) {
+  return series?.key === comparisonMeta.value.today ? '#4e79a7' : '#edc949'
+}
+
+const tableauDateTotal = computed(() => ({
+  today: shortDate(comparisonMeta.value.today),
+  yesterday: shortDate(comparisonMeta.value.yesterday),
+  todayAmount: Number(summary.value.today_amount || 0),
+  yesterdayAmount: Number(summary.value.yesterday_amount || 0),
+  growth: summary.value.amount_growth_pct,
+}))
+
+const tableauOwnerRows = computed(() => visibleOwnerComparisonRows.value)
+const tableauShopRows = computed(() => shopComparisonRows.value)
+const tableauProductRows = computed(() => [...productComparisonRows.value]
+  .sort((left, right) => Number(right.today_units || 0) - Number(left.today_units || 0))
+  .map((item, index) => ({ ...item, tableauRank: index + 1 })))
+const tableauSalesProductRows = computed(() => [...productComparisonRows.value]
+  .sort((left, right) => Number(right.today_amount || 0) - Number(left.today_amount || 0))
+  .map((item, index) => ({ ...item, tableauRank: index + 1 })))
+const tableauPrimaryChart = computed(() => hourlyLineCharts.value.find((line) => line.id === (activeDashboardTab.value === 'sales' ? 'sales-hourly' : 'product-hourly')))
+const tableauSecondaryChart = computed(() => hourlyLineCharts.value.find((line) => line.id === (activeDashboardTab.value === 'sales' ? 'sales-cumulative' : 'product-cumulative')))
+const tableauFilterCount = computed(() => activeDashboardFilterCount.value)
+
 function barWidth(value, max) {
   return `${Math.max(4, Math.min(100, (Number(value || 0) / max) * 100))}%`
 }
@@ -572,6 +603,123 @@ onBeforeUnmount(() => {
     <div v-if="successMessage" class="message success"><CheckCircle2 :size="18" /><span>{{ successMessage }}</span></div>
 
     <template v-if="result && hasOrders">
+      <section class="tableau-workspace">
+        <div class="tableau-view-tabs" role="tablist" aria-label="Tableau 看板页签">
+          <button type="button" role="tab" :aria-selected="activeDashboardTab === 'sales'" :class="{ active: activeDashboardTab === 'sales' }" @click="activeDashboardTab = 'sales'">销售额看板</button>
+          <button type="button" role="tab" :aria-selected="activeDashboardTab === 'product'" :class="{ active: activeDashboardTab === 'product' }" @click="activeDashboardTab = 'product'">产品维度看板</button>
+        </div>
+
+        <section class="tableau-filter-bar">
+          <label class="tableau-filter-field"><span>平台</span><select v-model="dashboardFilters.platformId" @change="markDashboardFiltersDirty"><option v-for="option in platformOptions" :key="option.id" :value="option.id">{{ option.name }}</option></select></label>
+          <label class="tableau-filter-field"><span>时间字段</span><select v-model="dashboardFilters.timeType" @change="markDashboardFiltersDirty"><option v-for="option in timeOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
+          <label class="tableau-filter-field"><span>品牌</span><input v-model="dashboardFilters.brandKeyword" type="search" placeholder="(全部)" @change="markDashboardFiltersDirty" @keyup.enter="markDashboardFiltersDirty" /></label>
+          <label v-if="activeDashboardTab === 'product'" class="tableau-filter-field"><span>SKU编码</span><details class="filter-dropdown"><summary>{{ selectedFilterLabel(dashboardFilters.skuCodes) }} <b>⌄</b></summary><div class="filter-menu"><label class="filter-option"><input type="checkbox" :checked="!dashboardFilters.skuCodes.length" @change="dashboardFilters.skuCodes = []; markDashboardFiltersDirty()" /> (全部)</label><label v-for="sku in filterOptions.sku_codes" :key="sku" class="filter-option"><input v-model="dashboardFilters.skuCodes" type="checkbox" :value="sku" @change="markDashboardFiltersDirty" /> {{ sku }}</label></div></details></label>
+          <label v-if="activeDashboardTab === 'product'" class="tableau-filter-field"><span>商品名称1</span><details class="filter-dropdown"><summary>{{ selectedFilterLabel(dashboardFilters.productNames) }} <b>⌄</b></summary><div class="filter-menu"><label class="filter-option"><input type="checkbox" :checked="!dashboardFilters.productNames.length" @change="dashboardFilters.productNames = []; markDashboardFiltersDirty()" /> (全部)</label><label v-for="product in filterOptions.product_names" :key="product" class="filter-option"><input v-model="dashboardFilters.productNames" type="checkbox" :value="product" @change="markDashboardFiltersDirty" /> {{ product }}</label></div></details></label>
+          <label class="tableau-filter-field"><span>时间截断</span><select v-model="dashboardFilters.timeTruncated" @change="markDashboardFiltersDirty"><option :value="true">真</option><option :value="false">假</option></select></label>
+          <label class="tableau-filter-field"><span>日期层级</span><details class="filter-dropdown"><summary>{{ selectedFilterLabel(dashboardFilters.dateLayers, '(多个值)') }} <b>⌄</b></summary><div class="filter-menu"><label class="filter-option"><input type="checkbox" :checked="!dashboardFilters.dateLayers.length" @change="dashboardFilters.dateLayers = []; markDashboardFiltersDirty()" /> (全部)</label><label v-for="layer in dateLayerOptions" :key="layer" class="filter-option"><input v-model="dashboardFilters.dateLayers" type="checkbox" :value="layer" @change="markDashboardFiltersDirty" /> {{ layer }}</label></div></details></label>
+          <div class="tableau-filter-actions"><span v-if="tableauFilterCount">已启用 {{ tableauFilterCount }} 项</span><button type="button" class="tableau-query-button" :disabled="loading" @click="applyDashboardFilters"><Loader2 v-if="loading" class="spin" :size="13" /><Search v-else :size="13" />查询</button><button type="button" class="tableau-reset-button" @click="clearDashboardFilters">重置</button></div>
+        </section>
+
+        <section v-if="activeDashboardTab === 'sales'" class="tableau-canvas sales-canvas">
+          <div class="tableau-column tableau-column-left">
+            <article class="tableau-sheet date-total-sheet">
+              <h2>日期总计</h2>
+              <table class="tableau-data-table">
+                <thead><tr><th>指标</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
+                <tbody><tr><td>实收金额</td><td>{{ formatMoney(tableauDateTotal.yesterdayAmount) }}</td><td>{{ formatMoney(tableauDateTotal.todayAmount) }}</td><td :class="growthClass(tableauDateTotal.growth)">{{ formatGrowth(tableauDateTotal.growth) }}</td></tr></tbody>
+              </table>
+            </article>
+
+            <article class="tableau-sheet">
+              <div class="tableau-sheet-heading"><h2>店铺对比昨日排名</h2><span>按今日实收金额排序</span></div>
+              <table class="tableau-data-table">
+                <thead><tr><th>店铺</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
+                <tbody><tr v-for="shop in tableauShopRows" :key="`${shop.shop_id}-${shop.shop_name}`" @click="selectDashboardDimension('shop', shop.shop_name)"><td>{{ shop.shop_name }}</td><td>{{ formatMoney(shop.yesterday_amount) }}</td><td>{{ formatMoney(shop.today_amount) }}</td><td :class="growthClass(shop.amount_growth_pct)">{{ formatGrowth(shop.amount_growth_pct) }}</td></tr></tbody>
+              </table>
+            </article>
+
+            <article class="tableau-sheet">
+              <div class="tableau-sheet-heading"><h2>负责人对比昨日排名</h2><span>按今日实收金额排序</span></div>
+              <table class="tableau-data-table">
+                <thead><tr><th>负责人</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
+                <tbody><tr v-for="owner in tableauOwnerRows" :key="owner.owner_name" @click="selectDashboardDimension('owner', owner.owner_name)"><td>{{ owner.owner_name }}</td><td>{{ formatMoney(owner.yesterday_amount) }}</td><td>{{ formatMoney(owner.today_amount) }}</td><td :class="growthClass(owner.amount_growth_pct)">{{ formatGrowth(owner.amount_growth_pct) }}</td></tr></tbody>
+              </table>
+            </article>
+
+            <article class="tableau-sheet">
+              <div class="tableau-sheet-heading"><h2>商品对比昨日排名</h2><span>按商品规格今日实收金额排序</span></div>
+              <table class="tableau-data-table">
+                <thead><tr><th>商品名称1 / Sku编码</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
+                <tbody><tr v-for="product in tableauSalesProductRows" :key="`${product.product_no}-${product.spec_name}`" @click="selectDashboardDimension('product', product.product_name)"><td><strong>{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small></td><td>{{ formatMoney(product.yesterday_amount) }}</td><td>{{ formatMoney(product.today_amount) }}</td><td :class="growthClass(product.amount_growth_pct)">{{ formatGrowth(product.amount_growth_pct) }}</td></tr></tbody>
+              </table>
+            </article>
+          </div>
+
+          <div class="tableau-column tableau-column-right">
+            <article class="tableau-chart-sheet">
+              <div class="tableau-sheet-heading"><h2>24小时对比昨日波动</h2><span>付款时间 · {{ comparisonCutoffLabel }}</span></div>
+              <div v-if="tableauPrimaryChart" class="tableau-chart-frame">
+                <div class="tableau-axis-labels"><span>{{ tableauPrimaryChart.chart.maxLabel }}</span><span>{{ tableauPrimaryChart.chart.midLabel }}</span><span>0</span></div>
+                <svg :viewBox="`0 0 ${tableauPrimaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日波动">
+                  <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
+                  <template v-for="series in tableauPrimaryChart.chart.series" :key="`sales-primary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="2.5" :fill="seriesIndexColor(series)" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
+                </svg>
+                <div class="tableau-x-axis"><span v-for="tick in tableauPrimaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
+              </div>
+            </article>
+          </div>
+
+          <article class="tableau-chart-sheet tableau-chart-sheet-wide">
+            <div class="tableau-sheet-heading"><h2>24小时对比昨日增长</h2><span>累计实收金额 · {{ comparisonCutoffLabel }}</span></div>
+            <div v-if="tableauSecondaryChart" class="tableau-chart-frame wide-chart-frame">
+              <div class="tableau-axis-labels"><span>{{ tableauSecondaryChart.chart.maxLabel }}</span><span>{{ tableauSecondaryChart.chart.midLabel }}</span><span>0</span></div>
+              <svg :viewBox="`0 0 ${tableauSecondaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日增长">
+                <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
+                <template v-for="series in tableauSecondaryChart.chart.series" :key="`sales-secondary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="2.5" :fill="seriesIndexColor(series)" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
+              </svg>
+              <div class="tableau-x-axis"><span v-for="tick in tableauSecondaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
+            </div>
+          </article>
+        </section>
+
+        <section v-else class="tableau-canvas product-canvas">
+          <div class="tableau-column tableau-column-left">
+            <article class="tableau-sheet product-table-sheet">
+              <div class="tableau-sheet-heading"><h2>商品对比昨日排名(商品数量)</h2><span>按编码数据对商品名称1降序排序</span></div>
+              <table class="tableau-data-table">
+                <thead><tr><th>商品名称1 / Sku编码</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
+                <tbody><tr v-for="product in tableauProductRows" :key="`${product.product_no}-${product.spec_name}`" @click="selectDashboardDimension('product', product.product_name)"><td><strong>{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small></td><td>{{ formatUnits(product.yesterday_units) }}</td><td>{{ formatUnits(product.today_units) }}</td><td :class="growthClass(product.units_growth_pct)">{{ formatGrowth(product.units_growth_pct) }}</td></tr></tbody>
+              </table>
+            </article>
+          </div>
+          <div class="tableau-column tableau-column-right">
+            <article class="tableau-chart-sheet">
+              <div class="tableau-sheet-heading"><h2>24小时对比昨日波动(商品数量)</h2><span>付款时间 · 产品规格</span></div>
+              <div v-if="tableauPrimaryChart" class="tableau-chart-frame">
+                <div class="tableau-axis-labels"><span>{{ tableauPrimaryChart.chart.maxLabel }}</span><span>{{ tableauPrimaryChart.chart.midLabel }}</span><span>0</span></div>
+                <svg :viewBox="`0 0 ${tableauPrimaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日波动(商品数量)">
+                  <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
+                  <template v-for="series in tableauPrimaryChart.chart.series" :key="`product-primary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="2.5" :fill="seriesIndexColor(series)" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'units') }}</text></template></template>
+                </svg>
+                <div class="tableau-x-axis"><span v-for="tick in tableauPrimaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
+              </div>
+            </article>
+          </div>
+          <article class="tableau-chart-sheet tableau-chart-sheet-wide">
+            <div class="tableau-sheet-heading"><h2>24小时对比昨日增长(商品数量)</h2><span>累计产品规格 · {{ comparisonCutoffLabel }}</span></div>
+            <div v-if="tableauSecondaryChart" class="tableau-chart-frame wide-chart-frame">
+              <div class="tableau-axis-labels"><span>{{ tableauSecondaryChart.chart.maxLabel }}</span><span>{{ tableauSecondaryChart.chart.midLabel }}</span><span>0</span></div>
+              <svg :viewBox="`0 0 ${tableauSecondaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日增长(商品数量)">
+                <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
+                <template v-for="series in tableauSecondaryChart.chart.series" :key="`product-secondary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="2.5" :fill="seriesIndexColor(series)" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'units') }}</text></template></template>
+              </svg>
+              <div class="tableau-x-axis"><span v-for="tick in tableauSecondaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
+            </div>
+          </article>
+        </section>
+      </section>
+
+      <section v-if="false">
       <section class="result-header">
         <div>
           <span class="eyebrow">查询结果</span>
@@ -737,6 +885,7 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
+      </section>
     </template>
 
     <section v-else-if="result && !hasOrders" class="empty-state panel">
