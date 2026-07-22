@@ -388,6 +388,8 @@ def build_analysis(
     end_time: datetime,
     platform_ids: list[str],
     time_type: int,
+    include_rows: bool = True,
+    row_preview_limit: int = 100,
 ) -> dict[str, Any]:
     """从同一批订单生成总览、时间、店铺和商品四种可对账聚合。"""
 
@@ -395,7 +397,24 @@ def build_analysis(
     columns = [f"trade.{col}" for col in trade_cols]
     columns += [f"logistics.{col}" for col in logistics_cols]
     columns += [f"goods.{col}" for col in goods_cols]
-    rows = [row for order in orders for row in flatten_order(order, trade_cols, goods_cols, logistics_cols)]
+    row_count = sum(max(1, len(order.get("goods_list") or [])) for order in orders)
+    if include_rows:
+        rows = [
+            row
+            for order in orders
+            for row in flatten_order(order, trade_cols, goods_cols, logistics_cols)
+        ]
+    else:
+        rows = []
+        preview_limit = max(0, row_preview_limit)
+        for order in orders:
+            if len(rows) >= preview_limit:
+                break
+            rows.extend(
+                flatten_order(order, trade_cols, goods_cols, logistics_cols)[
+                    : preview_limit - len(rows)
+                ]
+            )
 
     daily: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"date": "", "order_count": 0, "order_amount": 0.0, "units": 0.0}
@@ -612,13 +631,14 @@ def build_analysis(
         "columns": columns,
         "rows": rows,
         "order_count": len(orders),
-        "row_count": len(rows),
+        "row_count": row_count,
+        "rows_complete": include_rows,
         "platform_ids": sorted({item.strip() for item in platform_ids if item.strip()}),
         "start_time": _format_datetime(start_time),
         "end_time": _format_datetime(end_time),
         "summary": {
             "order_count": len(orders),
-            "detail_count": len(rows),
+            "detail_count": row_count,
             "shop_count": len(shops),
             "product_count": len(products),
             "units": units_total,

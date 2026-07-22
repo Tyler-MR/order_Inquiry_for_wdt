@@ -242,6 +242,7 @@ def read_wdt_dashboard(payload: WdtOrderQueryRequest, db=Depends(get_db)) -> dic
             platform_ids=payload.platform_ids,
             time_type=payload.time_type,
             dashboard_filters=payload.dashboard_filters.model_dump(),
+            include_rows=payload.include_rows,
         )
         sync = latest_sync(db)
         result["last_synced_at"] = sync.get("synced_at") if sync else None

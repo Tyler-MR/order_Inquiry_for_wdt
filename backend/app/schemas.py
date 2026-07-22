@@ -83,12 +83,14 @@ class WdtOrderQueryRequest(BaseModel):
     time_type: int = Field(default=1, ge=1, le=3)
     # 留空时由后端读取 total_count，自动翻完该时间窗口的所有分页。
     max_pages: int | None = Field(default=None, ge=1, le=1000)
+    include_rows: bool = True
     dashboard_filters: WdtDashboardFilters = Field(default_factory=WdtDashboardFilters)
 
 
 class WdtOrderQueryResponse(BaseModel):
     columns: list[str]
     rows: list[dict]
+    rows_complete: bool = True
     order_count: int
     row_count: int
     api_total_count: int

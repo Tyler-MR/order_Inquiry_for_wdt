@@ -178,7 +178,7 @@ async function fetchJson(url, options) {
   return data
 }
 
-async function queryOrders({ silent = false } = {}) {
+async function queryOrders({ silent = false, includeRows = true } = {}) {
   if (loading.value) return
 
   if (!silent) {
@@ -200,6 +200,7 @@ async function queryOrders({ silent = false } = {}) {
         platform_ids: filters.platformId === 'all' ? [] : [filters.platformId],
         page_size: Number(filters.pageSize),
         time_type: Number(filters.timeType),
+        include_rows: includeRows,
         // 留空表示由后端依据 total_count 自动拉取完整分页。
         max_pages: filters.maxPages ? Number(filters.maxPages) : null,
         dashboard_filters: {
@@ -247,7 +248,7 @@ function markDashboardFiltersDirty() {
 
 function applyDashboardFilters() {
   dashboardFiltersDirty.value = false
-  queryOrders()
+  queryOrders({ includeRows: false })
 }
 
 function clearDashboardFilters() {
@@ -266,7 +267,7 @@ function selectDashboardDimension(dimension, value) {
   const selected = dashboardFilters[filterKey]
   dashboardFilters[filterKey] = selected.length === 1 && selected[0] === value ? [] : [value]
   dashboardFiltersDirty.value = false
-  queryOrders()
+  queryOrders({ includeRows: false })
 }
 
 function connectOrderEvents() {
@@ -531,7 +532,11 @@ function shopShare(amount) {
   return summary.value.order_amount ? `${formatNumber((Number(amount || 0) / summary.value.order_amount) * 100, 1)}%` : '0%'
 }
 
-function downloadCsv(data = result.value) {
+async function downloadCsv(data = result.value) {
+  if (data?.rows_complete === false) {
+    await queryOrders({ silent: true, includeRows: true })
+    data = result.value
+  }
   if (!data?.columns?.length) return
   const escapeCsv = (value) => {
     const text = value === null || value === undefined ? '' : String(value)
@@ -800,7 +805,7 @@ onBeforeUnmount(() => {
       </section>
 
       <section class="detail-panel panel">
-        <div class="panel-heading detail-heading"><div><h3>订单明细预览</h3><p>当前筛选 {{ formatNumber(filteredDetailRows.length) }} 行，第 {{ formatNumber(detailPage) }} / {{ formatNumber(detailPageCount) }} 页；完整 {{ formatNumber(result.row_count) }} 行可通过 CSV 下载。</p></div><div class="detail-tools"><label class="search-box"><Search :size="16" /><input v-model="detailKeyword" type="search" placeholder="搜索订单号、店铺或商品" /></label><button class="secondary-button" type="button" @click="downloadCsv()"><Download :size="16" />下载 CSV</button></div></div>
+        <div class="panel-heading detail-heading"><div><h3>订单明细预览</h3><p v-if="result.rows_complete !== false">当前筛选 {{ formatNumber(filteredDetailRows.length) }} 行，第 {{ formatNumber(detailPage) }} / {{ formatNumber(detailPageCount) }} 页；完整 {{ formatNumber(result.row_count) }} 行可通过 CSV 下载。</p><p v-else>当前看板已使用快速预览，显示 {{ formatNumber(filteredDetailRows.length) }} 行；共 {{ formatNumber(result.row_count) }} 行，点击“下载 CSV”会加载完整明细。</p></div><div class="detail-tools"><label class="search-box"><Search :size="16" /><input v-model="detailKeyword" type="search" placeholder="搜索订单号、店铺或商品" /></label><button class="secondary-button" type="button" @click="downloadCsv()"><Download :size="16" />下载 CSV</button></div></div>
         <div class="table-wrap">
           <table>
             <thead><tr><th v-for="column in tableColumns" :key="column">{{ columnLabel(column) }}</th></tr></thead>

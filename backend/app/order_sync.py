@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from datetime import date, datetime, time, timedelta
+from time import monotonic
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -24,6 +26,12 @@ from app.wdt_client import (
 
 logger = logging.getLogger(__name__)
 LOCAL_TZ = ZoneInfo(os.getenv("APP_TIMEZONE", "Asia/Shanghai"))
+DASHBOARD_SNAPSHOT_CACHE_SECONDS = max(
+    0.0,
+    float(os.getenv("WDT_DASHBOARD_SNAPSHOT_CACHE_SECONDS", "120")),
+)
+_dashboard_snapshot_cache: dict[tuple[Any, ...], tuple[float, list[dict[str, Any]], dict[str, Any]]] = {}
+_dashboard_snapshot_cache_lock = threading.Lock()
 HIDDEN_PDD_OWNER = "淘宝 李世豪"
 
 
@@ -149,6 +157,8 @@ def sync_recent_orders() -> dict[str, Any]:
                 run.finished_at = synced_at
             db.commit()
 
+        clear_dashboard_snapshot_cache()
+
         result = {
             "status": "success",
             "synced_at": synced_at.isoformat(sep=" ", timespec="seconds"),
@@ -179,6 +189,59 @@ def _time_column(time_type: int):
         time_type,
         WdtOrder.modified_at,
     )
+
+
+def clear_dashboard_snapshot_cache() -> None:
+    """Drop the in-process order snapshot after a successful data sync."""
+
+    with _dashboard_snapshot_cache_lock:
+        _dashboard_snapshot_cache.clear()
+
+
+def _load_dashboard_snapshot(
+    db: Session,
+    *,
+    start_time: datetime,
+    end_time: datetime,
+    selected_platforms: list[str],
+    time_type: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Load and decode a dashboard snapshot once per process/cache window."""
+
+    cache_key = (start_time, end_time, tuple(selected_platforms), time_type)
+    now = monotonic()
+    if DASHBOARD_SNAPSHOT_CACHE_SECONDS > 0:
+        with _dashboard_snapshot_cache_lock:
+            cached = _dashboard_snapshot_cache.get(cache_key)
+            if cached and now < cached[0]:
+                return cached[1], cached[2]
+
+    time_column = _time_column(time_type)
+    statement = select(WdtOrder).where(time_column >= start_time, time_column <= end_time)
+    if selected_platforms:
+        statement = statement.where(WdtOrder.platform_id.in_(selected_platforms))
+    statement = statement.order_by(time_column, WdtOrder.id)
+
+    orders = [json.loads(item.payload_json) for item in db.scalars(statement).all()]
+    owner_map = _load_shop_owner_map()
+    orders = [
+        order
+        for order in orders
+        if not (
+            str(order.get("platform_id") or "").strip() == "39"
+            and _owner_name(order, _order_shop_name(order), owner_map) == HIDDEN_PDD_OWNER
+        )
+    ]
+    filter_options = _filter_options(orders)
+
+    if DASHBOARD_SNAPSHOT_CACHE_SECONDS > 0:
+        with _dashboard_snapshot_cache_lock:
+            _dashboard_snapshot_cache[cache_key] = (
+                now + DASHBOARD_SNAPSHOT_CACHE_SECONDS,
+                orders,
+                filter_options,
+            )
+    return orders, filter_options
 
 
 def _clean_filter_values(values: Any) -> set[str]:
@@ -339,28 +402,18 @@ def read_order_analysis(
     platform_ids: list[str],
     time_type: int,
     dashboard_filters: dict[str, Any] | None = None,
+    include_rows: bool = True,
 ) -> dict[str, Any]:
     """从 MySQL 读取订单原始快照，并复用现有聚合逻辑返回看板数据。"""
 
     selected_platforms = sorted({item.strip() for item in platform_ids if item.strip()})
-    time_column = _time_column(time_type)
-    statement = select(WdtOrder).where(time_column >= start_time, time_column <= end_time)
-    if selected_platforms:
-        statement = statement.where(WdtOrder.platform_id.in_(selected_platforms))
-    statement = statement.order_by(time_column, WdtOrder.id)
-
-    orders = [json.loads(item.payload_json) for item in db.scalars(statement).all()]
-    owner_map = _load_shop_owner_map()
-    # 拼多多看板不展示“淘宝 李世豪”负责的店铺数据；其他平台不受此隐藏规则影响。
-    orders = [
-        order
-        for order in orders
-        if not (
-            str(order.get("platform_id") or "").strip() == "39"
-            and _owner_name(order, _order_shop_name(order), owner_map) == HIDDEN_PDD_OWNER
-        )
-    ]
-    filter_options = _filter_options(orders)
+    orders, filter_options = _load_dashboard_snapshot(
+        db,
+        start_time=start_time,
+        end_time=end_time,
+        selected_platforms=selected_platforms,
+        time_type=time_type,
+    )
     filtered_orders = _apply_dashboard_filters(
         orders,
         time_type=time_type,
@@ -372,6 +425,7 @@ def read_order_analysis(
         end_time=end_time,
         platform_ids=selected_platforms,
         time_type=time_type,
+        include_rows=include_rows,
     )
     result.update(
         {
