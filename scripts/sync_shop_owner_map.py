@@ -23,24 +23,32 @@ def read_workbook(path: Path) -> list[dict[str, str]]:
     try:
         sheet = workbook.active
         header_row = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True))
-        headers = {str(value).strip(): index for index, value in enumerate(header_row) if value is not None}
+        headers: dict[str, int] = {}
+        for index, value in enumerate(header_row):
+            if value is None:
+                continue
+            header = str(value).replace("\ufeff", "").strip()
+            if header:
+                headers.setdefault(header, index)
         shop_column = headers.get("店铺名称")
         owner_column = headers.get("负责人")
         if shop_column is None or owner_column is None:
             raise ValueError("Excel 必须包含“店铺名称”和“负责人”两列")
 
-        platform_column = headers.get("平台")
         rows: list[dict[str, str]] = []
-        for row in sheet.iter_rows(min_row=2, values_only=True):
+        skipped_rows: list[int] = []
+        for excel_row, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
             shop_name = str(row[shop_column] or "").strip()
             owner_name = str(row[owner_column] or "").strip()
-            platform = str(row[platform_column] or "").strip() if platform_column is not None else ""
-            if shop_name or owner_name:
-                if not shop_name or not owner_name:
-                    raise ValueError("Excel 中存在只有店铺名称或只有负责人的不完整行")
-                rows.append({"shop_name": shop_name, "owner_name": owner_name, "platform": platform})
+            if not shop_name or not owner_name:
+                if shop_name or owner_name:
+                    skipped_rows.append(excel_row)
+                continue
+            rows.append({"shop_name": shop_name, "owner_name": owner_name, "platform": ""})
         if not rows:
             raise ValueError("Excel 中没有有效的店铺负责人数据")
+        if skipped_rows:
+            print(f"跳过不完整行：{len(skipped_rows)} 行，行号 {skipped_rows}")
         return rows
     finally:
         workbook.close()
