@@ -126,6 +126,7 @@ const filters = reactive(defaultFilters())
 const dashboardFilters = reactive(defaultDashboardFilters())
 const result = ref(null)
 const loading = ref(false)
+const csvDownloading = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 const detailKeyword = ref('')
@@ -179,7 +180,7 @@ async function fetchJson(url, options) {
 }
 
 async function queryOrders({ silent = false, includeRows = true } = {}) {
-  if (loading.value) return
+  if (loading.value) return null
 
   if (!silent) {
     errorMessage.value = ''
@@ -223,9 +224,11 @@ async function queryOrders({ silent = false, includeRows = true } = {}) {
         : '读取完成，当前时间范围没有匹配订单。'
       if (filters.exportAfterQuery && data.rows?.length) downloadCsv(data)
     }
+    return data
   } catch (error) {
     if (!silent || !result.value) result.value = null
     errorMessage.value = error.message || '查询失败，请稍后重试。'
+    return null
   } finally {
     loading.value = false
   }
@@ -540,26 +543,48 @@ function shopShare(amount) {
 }
 
 async function downloadCsv(data = result.value) {
-  if (data?.rows_complete === false) {
-    await queryOrders({ silent: true, includeRows: true })
-    data = result.value
+  if (csvDownloading.value) return
+  if (loading.value) {
+    errorMessage.value = '订单数据正在更新，请稍后再下载 CSV。'
+    return
   }
-  if (!data?.columns?.length) return
-  const escapeCsv = (value) => {
-    const text = value === null || value === undefined ? '' : String(value)
-    return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+
+  csvDownloading.value = true
+  errorMessage.value = ''
+  try {
+    if (data?.rows_complete === false) {
+      successMessage.value = '正在加载完整订单明细，请稍候…'
+      data = await queryOrders({ silent: true, includeRows: true }) || result.value
+    }
+    if (!data?.columns?.length) throw new Error('当前没有可下载的订单明细。')
+    if (data.rows_complete === false) throw new Error('完整订单明细加载失败，请稍后重试。')
+
+    const escapeCsv = (value) => {
+      const text = value === null || value === undefined ? '' : String(value)
+      return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+    }
+    const lines = [data.columns.map(escapeCsv).join(',')]
+    for (const row of data.rows || []) lines.push(data.columns.map((column) => escapeCsv(row[column])).join(','))
+    const blob = new Blob([`\ufeff${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    const startDate = String(data.start_time || '').slice(0, 10)
+    const endDate = String(data.end_time || '').slice(0, 10)
+    link.download = `wdt_orders_${startDate}_${endDate}.csv`
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    window.setTimeout(() => {
+      link.remove()
+      URL.revokeObjectURL(url)
+    }, 1000)
+    successMessage.value = `CSV 已开始下载，共 ${formatNumber(data.row_count ?? data.rows.length)} 行。`
+  } catch (error) {
+    errorMessage.value = error.message || 'CSV 下载失败，请稍后重试。'
+  } finally {
+    csvDownloading.value = false
   }
-  const lines = [data.columns.map(escapeCsv).join(',')]
-  for (const row of data.rows || []) lines.push(data.columns.map((column) => escapeCsv(row[column])).join(','))
-  const blob = new Blob([`\ufeff${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  const startDate = String(data.start_time || '').slice(0, 10)
-  const endDate = String(data.end_time || '').slice(0, 10)
-  link.download = `wdt_orders_${startDate}_${endDate}.csv`
-  link.click()
-  URL.revokeObjectURL(url)
 }
 
 onMounted(async () => {
@@ -653,7 +678,7 @@ onBeforeUnmount(() => {
           <h2>近三天经营概览</h2>
           <p>{{ formatDateTime(result.start_time) }} 至 {{ formatDateTime(result.end_time) }} · {{ result.platform_ids.length ? result.platform_ids.map((id) => platformOptions.find((item) => item.id === id)?.name || id).join('、') : '全部平台' }}</p>
         </div>
-        <button class="secondary-button" type="button" @click="downloadCsv()"><Download :size="17" />下载完整 CSV</button>
+        <button class="secondary-button" type="button" :disabled="csvDownloading" @click="downloadCsv()"><Loader2 v-if="csvDownloading" class="spin" :size="17" /><Download v-else :size="17" />{{ csvDownloading ? '正在生成 CSV…' : '下载完整 CSV' }}</button>
       </section>
 
       <section class="kpi-grid">
@@ -812,7 +837,7 @@ onBeforeUnmount(() => {
       </section>
 
       <section class="detail-panel panel">
-        <div class="panel-heading detail-heading"><div><h3>订单明细预览</h3><p v-if="result.rows_complete !== false">当前筛选 {{ formatNumber(filteredDetailRows.length) }} 行，第 {{ formatNumber(detailPage) }} / {{ formatNumber(detailPageCount) }} 页；完整 {{ formatNumber(result.row_count) }} 行可通过 CSV 下载。</p><p v-else>当前看板已使用快速预览，显示 {{ formatNumber(filteredDetailRows.length) }} 行；共 {{ formatNumber(result.row_count) }} 行，点击“下载 CSV”会加载完整明细。</p></div><div class="detail-tools"><label class="search-box"><Search :size="16" /><input v-model="detailKeyword" type="search" placeholder="搜索订单号、店铺或商品" /></label><button class="secondary-button" type="button" @click="downloadCsv()"><Download :size="16" />下载 CSV</button></div></div>
+        <div class="panel-heading detail-heading"><div><h3>订单明细预览</h3><p v-if="result.rows_complete !== false">当前筛选 {{ formatNumber(filteredDetailRows.length) }} 行，第 {{ formatNumber(detailPage) }} / {{ formatNumber(detailPageCount) }} 页；完整 {{ formatNumber(result.row_count) }} 行可通过 CSV 下载。</p><p v-else>当前看板已使用快速预览，显示 {{ formatNumber(filteredDetailRows.length) }} 行；共 {{ formatNumber(result.row_count) }} 行，点击“下载 CSV”会加载完整明细。</p></div><div class="detail-tools"><label class="search-box"><Search :size="16" /><input v-model="detailKeyword" type="search" placeholder="搜索订单号、店铺或商品" /></label><button class="secondary-button" type="button" :disabled="csvDownloading" @click="downloadCsv()"><Loader2 v-if="csvDownloading" class="spin" :size="16" /><Download v-else :size="16" />{{ csvDownloading ? '正在生成 CSV…' : '下载 CSV' }}</button></div></div>
         <div class="table-wrap">
           <table>
             <thead><tr><th v-for="column in tableColumns" :key="column">{{ columnLabel(column) }}</th></tr></thead>
