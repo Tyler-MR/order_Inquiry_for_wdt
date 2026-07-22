@@ -9,7 +9,7 @@ from time import monotonic
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
@@ -104,6 +104,8 @@ def _upsert_orders(db: Session, orders: list[dict[str, Any]], synced_at: datetim
         item.modified_at = _parse_wdt_datetime(order.get("modified"))
         item.trade_at = _parse_wdt_datetime(order.get("trade_time"))
         item.order_created_at = _parse_wdt_datetime(order.get("created"))
+        item.pay_at = _parse_wdt_datetime(order.get("pay_time"))
+        item.consign_at = _parse_wdt_datetime(order.get("consign_time"))
         item.payload_json = json.dumps(order, ensure_ascii=False, default=str)
         item.synced_at = synced_at
 
@@ -185,10 +187,14 @@ def sync_recent_orders() -> dict[str, Any]:
 
 
 def _time_column(time_type: int):
-    return {1: WdtOrder.modified_at, 2: WdtOrder.trade_at, 3: WdtOrder.order_created_at}.get(
-        time_type,
-        WdtOrder.modified_at,
-    )
+    columns = {
+        1: WdtOrder.modified_at,
+        2: WdtOrder.trade_at,
+        3: WdtOrder.order_created_at,
+        4: func.coalesce(WdtOrder.pay_at, WdtOrder.trade_at),
+        5: func.coalesce(WdtOrder.consign_at, WdtOrder.pay_at, WdtOrder.trade_at),
+    }
+    return columns.get(time_type, WdtOrder.pay_at)
 
 
 def clear_dashboard_snapshot_cache() -> None:

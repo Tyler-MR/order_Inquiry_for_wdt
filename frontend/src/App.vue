@@ -6,11 +6,9 @@ import {
   CircleAlert,
   Database,
   Download,
-  Filter,
   Loader2,
   Maximize2,
   Package,
-  RefreshCw,
   Search,
   ShoppingCart,
   Store,
@@ -22,7 +20,7 @@ import {
 // Use same-origin /api in both development and production.
 // Vite and Nginx proxy /api to the FastAPI service respectively.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
-// 分页策略改版后使用新 key，避免沿用旧版本中可能保存的 maxPages=1。
+// 保留查询口径设置，兼容升级前已保存的平台与时间字段选择。
 const FILTERS_KEY = 'wdt_order_analysis_filters_v2'
 
 const platformOptions = [
@@ -34,9 +32,8 @@ const platformOptions = [
 ]
 
 const timeOptions = [
-  { value: 1, label: '最后修改时间 modified' },
-  { value: 2, label: '下单时间 trade_time' },
-  { value: 3, label: '创建时间 created' },
+  { value: 4, label: '付款时间 pay_time' },
+  { value: 5, label: '发货时间 consign_time' },
 ]
 
 const dateLayerOptions = ['今日', '昨日', '前天']
@@ -58,18 +55,10 @@ function recentDateWindow(now = new Date()) {
   }
 }
 
-function defaultFilters() {
-  return {
-    platformId: '39',
-    timeType: 1,
-    pageSize: 100,
-    maxPages: null,
-    exportAfterQuery: false,
-  }
-}
-
 function defaultDashboardFilters() {
   return {
+    platformId: '39',
+    timeType: 4,
     brandKeyword: '',
     skuCodes: [],
     productNames: [],
@@ -80,7 +69,6 @@ function defaultDashboardFilters() {
   }
 }
 
-const filters = reactive(defaultFilters())
 const dashboardFilters = reactive(defaultDashboardFilters())
 const result = ref(null)
 const loading = ref(false)
@@ -99,10 +87,8 @@ function loadFilters() {
   try {
     const saved = JSON.parse(localStorage.getItem(FILTERS_KEY) || 'null')
     if (saved && typeof saved === 'object') {
-      const savedFilters = { ...saved }
-      delete savedFilters.startAt
-      delete savedFilters.endAt
-      Object.assign(filters, savedFilters)
+      if (saved.platformId) dashboardFilters.platformId = saved.platformId
+      if ([4, 5].includes(Number(saved.timeType))) dashboardFilters.timeType = Number(saved.timeType)
     }
   } catch {
     localStorage.removeItem(FILTERS_KEY)
@@ -110,17 +96,10 @@ function loadFilters() {
 }
 
 function saveFilters() {
-  localStorage.setItem(FILTERS_KEY, JSON.stringify({ ...filters }))
-}
-
-function resetFilters() {
-  Object.assign(filters, defaultFilters())
-  Object.assign(dashboardFilters, defaultDashboardFilters())
-  dashboardFiltersDirty.value = false
-  saveFilters()
-  result.value = null
-  errorMessage.value = ''
-  successMessage.value = ''
+  localStorage.setItem(FILTERS_KEY, JSON.stringify({
+    platformId: dashboardFilters.platformId,
+    timeType: dashboardFilters.timeType,
+  }))
 }
 
 function toApiDateTime(value, endOfMinute = false) {
@@ -138,12 +117,12 @@ function buildDashboardRequestBody(dateWindow, includeRows = false) {
   return {
     start_time: toApiDateTime(dateWindow.startAt),
     end_time: toApiDateTime(dateWindow.endAt, true),
-    platform_ids: filters.platformId === 'all' ? [] : [filters.platformId],
-    page_size: Number(filters.pageSize),
-    time_type: Number(filters.timeType),
+    platform_ids: dashboardFilters.platformId === 'all' ? [] : [dashboardFilters.platformId],
+    page_size: 100,
+    time_type: Number(dashboardFilters.timeType),
     include_rows: includeRows,
     // 留空表示由后端依据 total_count 自动拉取完整分页。
-    max_pages: filters.maxPages ? Number(filters.maxPages) : null,
+    max_pages: null,
     dashboard_filters: {
       brand: dashboardFilters.brandKeyword.trim() ? [dashboardFilters.brandKeyword.trim()] : [],
       sku_codes: dashboardFilters.skuCodes,
@@ -180,7 +159,6 @@ async function queryOrders({ silent = false, includeRows = false } = {}) {
       successMessage.value = data.order_count
         ? `已从本地 MySQL 加载 ${formatNumber(data.order_count)} 笔订单，覆盖 ${data.source_window_count} 个日窗口。`
         : '读取完成，当前时间范围没有匹配订单。'
-      if (filters.exportAfterQuery) downloadCsv()
     }
     return data
   } catch (error) {
@@ -291,6 +269,7 @@ function growthClass(value) {
 
 const hourlyRows = computed(() => result.value?.hourly || [])
 const comparisonMeta = computed(() => result.value?.comparison || {})
+const activeTimeFieldLabel = computed(() => timeOptions.find((option) => option.value === Number(dashboardFilters.timeType))?.label.split(' ')[0] || '付款时间')
 const comparisonTodayLabel = computed(() => comparisonMeta.value.today_label || comparisonMeta.value.today || '当前日')
 const comparisonYesterdayLabel = computed(() => comparisonMeta.value.yesterday_label || comparisonMeta.value.yesterday || '上一日')
 const comparisonCutoffLabel = computed(() => {
@@ -423,7 +402,7 @@ const shopComparisonRows = computed(() => (result.value?.shop_comparison || []).
 const productComparisonRows = computed(() => (result.value?.product_comparison || []).slice(0, 8))
 const ownerComparisonRows = computed(() => result.value?.owner_comparison || [])
 const hiddenPddOwnerName = '淘宝 李世豪'
-const isPddDashboard = computed(() => filters.platformId === '39')
+const isPddDashboard = computed(() => dashboardFilters.platformId === '39')
 const visibleOwnerFilterOptions = computed(() => filterList(filterOptions.value.owner_names).filter((owner) => !(isPddDashboard.value && owner === hiddenPddOwnerName)))
 const visibleOwnerComparisonRows = computed(() => ownerComparisonRows.value
   .filter((owner) => !(isPddDashboard.value && owner.owner_name === hiddenPddOwnerName))
@@ -437,6 +416,8 @@ const filterOptions = computed(() => result.value?.filter_options || {
   brand_available: false,
 })
 const activeDashboardFilterCount = computed(() => [
+  dashboardFilters.platformId !== '39' ? dashboardFilters.platformId : '',
+  dashboardFilters.timeType !== 4 ? 'time_type' : '',
   dashboardFilters.brandKeyword.trim(),
   ...dashboardFilters.skuCodes,
   ...dashboardFilters.productNames,
@@ -538,54 +519,6 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <section class="query-panel">
-      <div class="section-heading compact-heading">
-        <div class="heading-icon"><Filter :size="18" /></div>
-        <div>
-          <h1>查询条件</h1>
-          <p>数据由后端定时同步到 MySQL，当前看板固定查询前天、昨天和今天；SSE 会在同步完成后自动刷新。</p>
-        </div>
-      </div>
-
-      <form class="query-form" @submit.prevent="queryOrders">
-        <label>
-          <span>平台筛选</span>
-          <select v-model="filters.platformId">
-            <option v-for="option in platformOptions" :key="option.id" :value="option.id">{{ option.name }}</option>
-          </select>
-        </label>
-        <label>
-          <span>时间字段</span>
-          <select v-model="filters.timeType">
-            <option v-for="option in timeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-          </select>
-        </label>
-        <label>
-          <span>页大小</span>
-          <input v-model.number="filters.pageSize" type="number" min="1" max="100" step="1" />
-        </label>
-        <label>
-          <span>最大页数 / 日（可选）</span>
-          <input v-model.number="filters.maxPages" type="number" min="1" max="1000" step="1" placeholder="自动拉取全部" />
-        </label>
-      </form>
-
-      <div class="query-actions">
-        <label class="check-field">
-          <input v-model="filters.exportAfterQuery" type="checkbox" />
-          <span>查询后自动导出 CSV</span>
-        </label>
-        <div class="action-group">
-          <button class="secondary-button" type="button" :disabled="loading" @click="resetFilters"><RefreshCw :size="16" />重置</button>
-          <button class="primary-button" type="button" :disabled="loading" @click="queryOrders">
-            <Loader2 v-if="loading" class="spin" :size="17" />
-            <Search v-else :size="17" />
-            {{ loading ? '正在读取本地数据…' : '读取订单' }}
-          </button>
-        </div>
-      </div>
-    </section>
-
     <div v-if="errorMessage" class="message error"><CircleAlert :size="18" /><span>{{ errorMessage }}</span></div>
     <div v-if="successMessage" class="message success"><CheckCircle2 :size="18" /><span>{{ successMessage }}</span></div>
 
@@ -620,6 +553,8 @@ onBeforeUnmount(() => {
           <div class="filter-strip-actions"><span class="filter-count">已启用 {{ activeDashboardFilterCount }} 项</span><span v-if="dashboardFiltersDirty" class="filter-pending">待查询</span><button class="primary-button compact-button" type="button" :disabled="loading" @click="applyDashboardFilters"><Search :size="14" />按条件查询</button><button class="text-button" type="button" @click="clearDashboardFilters">清除看板筛选</button></div>
         </div>
           <div class="unified-filter-grid">
+          <label class="filter-field"><span>平台筛选</span><select v-model="dashboardFilters.platformId" @change="markDashboardFiltersDirty"><option v-for="option in platformOptions" :key="option.id" :value="option.id">{{ option.name }}</option></select></label>
+          <label class="filter-field"><span>时间字段</span><select v-model="dashboardFilters.timeType" @change="markDashboardFiltersDirty"><option v-for="option in timeOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
           <label class="filter-field"><span>品牌</span><input v-model="dashboardFilters.brandKeyword" type="search" placeholder="输入品牌" @change="markDashboardFiltersDirty" @keyup.enter="markDashboardFiltersDirty" /><small v-if="!filterOptions.brand_available">品牌字段待接入订单清洗</small></label>
           <label class="filter-field"><span>SKU 编码</span><details class="filter-dropdown"><summary>{{ selectedFilterLabel(dashboardFilters.skuCodes) }} <b>⌄</b></summary><div class="filter-menu"><label class="filter-option"><input type="checkbox" :checked="!dashboardFilters.skuCodes.length" @change="dashboardFilters.skuCodes = []; markDashboardFiltersDirty()" /> (全部)</label><label v-for="sku in filterOptions.sku_codes" :key="sku" class="filter-option"><input v-model="dashboardFilters.skuCodes" type="checkbox" :value="sku" @change="markDashboardFiltersDirty" /> {{ sku }}</label></div></details></label>
           <label class="filter-field"><span>商品名称1</span><details class="filter-dropdown"><summary>{{ selectedFilterLabel(dashboardFilters.productNames) }} <b>⌄</b></summary><div class="filter-menu"><label class="filter-option"><input type="checkbox" :checked="!dashboardFilters.productNames.length" @change="dashboardFilters.productNames = []; markDashboardFiltersDirty()" /> (全部)</label><label v-for="product in filterOptions.product_names" :key="product" class="filter-option"><input v-model="dashboardFilters.productNames" type="checkbox" :value="product" @change="markDashboardFiltersDirty" /> {{ product }}</label></div></details></label>
@@ -648,8 +583,8 @@ onBeforeUnmount(() => {
 
       <section class="tableau-grid">
         <article class="panel hourly-panel tableau-line-panel">
-          <div class="panel-heading"><div><h3>24 小时付款时间折线</h3><p>{{ comparisonMeta.today || '-' }} 与 {{ comparisonMeta.yesterday || '-' }} 的同小时趋势</p></div></div>
-          <div class="hourly-legend"><span><i class="legend-swatch today"></i>{{ comparisonTodayLabel }}</span><span><i class="legend-swatch yesterday"></i>{{ comparisonYesterdayLabel }}</span><span class="legend-hint">付款时间 · {{ comparisonCutoffLabel }}</span></div>
+          <div class="panel-heading"><div><h3>24 小时{{ activeTimeFieldLabel }}折线</h3><p>{{ comparisonMeta.today || '-' }} 与 {{ comparisonMeta.yesterday || '-' }} 的同小时趋势</p></div></div>
+          <div class="hourly-legend"><span><i class="legend-swatch today"></i>{{ comparisonTodayLabel }}</span><span><i class="legend-swatch yesterday"></i>{{ comparisonYesterdayLabel }}</span><span class="legend-hint">{{ activeTimeFieldLabel }} · {{ comparisonCutoffLabel }}</span></div>
           <div v-if="hourlyRows.length" class="hourly-line-grid">
             <article v-for="line in hourlyLineCharts" :key="line.id" class="hourly-line-card">
               <div class="line-card-heading"><div><strong>{{ line.title }}</strong><span>{{ line.subtitle }}</span></div><div class="line-card-actions"><em>{{ line.unit }}</em><button class="chart-zoom-button" type="button" :aria-label="`放大${line.title}`" :title="`放大${line.title}`" @click="openLineChart(line)"><Maximize2 :size="14" /></button></div></div>

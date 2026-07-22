@@ -70,6 +70,8 @@ class WdtOrder(Base):
     modified_at: Mapped[datetime | None] = mapped_column(DateTime, index=True, nullable=True)
     trade_at: Mapped[datetime | None] = mapped_column(DateTime, index=True, nullable=True)
     order_created_at: Mapped[datetime | None] = mapped_column(DateTime, index=True, nullable=True)
+    pay_at: Mapped[datetime | None] = mapped_column(DateTime, index=True, nullable=True)
+    consign_at: Mapped[datetime | None] = mapped_column(DateTime, index=True, nullable=True)
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)
     synced_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 

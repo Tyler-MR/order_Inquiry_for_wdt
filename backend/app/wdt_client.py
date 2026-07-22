@@ -256,10 +256,17 @@ def _parse_analysis_datetime(value: Any) -> datetime | None:
 
 
 def _order_analysis_datetime(order: dict[str, Any], time_type: int) -> datetime | None:
-    """优先使用付款时间，保持与 Tableau 的“平台付款时间”口径一致。"""
+    """按看板选择的时间字段解析订单事件时间，缺失时回退到可用时间。"""
 
-    selected_field = {1: "modified", 2: "trade_time", 3: "created"}.get(time_type, "modified")
-    fields = ("pay_time", selected_field, "trade_time", "modified", "created")
+    selected_field = {
+        1: "modified",
+        2: "trade_time",
+        3: "created",
+        4: "pay_time",
+        5: "consign_time",
+    }.get(time_type, "pay_time")
+    fallback_fields = ("trade_time", "pay_time", "modified", "created")
+    fields = (selected_field, *fallback_fields)
     for field in fields:
         parsed = _parse_analysis_datetime(order.get(field))
         if parsed:
@@ -687,7 +694,13 @@ def build_analysis(
             "today_label": comparison_today_label,
             "yesterday_label": comparison_yesterday_label,
             "cutoff_hour": comparison_cutoff_hour,
-            "analysis_time_field": "pay_time",
+            "analysis_time_field": {
+                1: "modified",
+                2: "trade_time",
+                3: "created",
+                4: "pay_time",
+                5: "consign_time",
+            }.get(time_type, "pay_time"),
             "owner_mapping_source": "店铺信息表",
             "owner_mapping_coverage_pct": (
                 matched_owner_orders

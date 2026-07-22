@@ -80,7 +80,7 @@ class WdtOrderQueryRequest(BaseModel):
     end_time: datetime
     platform_ids: list[str] = Field(default_factory=lambda: ["39"])
     page_size: int = Field(default=100, ge=1, le=100)
-    time_type: int = Field(default=1, ge=1, le=3)
+    time_type: int = Field(default=4, ge=1, le=5)
     # 留空时由后端读取 total_count，自动翻完该时间窗口的所有分页。
     max_pages: int | None = Field(default=None, ge=1, le=1000)
     include_rows: bool = True

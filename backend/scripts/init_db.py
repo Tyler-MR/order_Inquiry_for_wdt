@@ -1,10 +1,12 @@
+import json
+from datetime import datetime
 from pathlib import Path
 import sys
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT_DIR))
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 
 from app.database import Base, SessionLocal, engine
 from app.models import Category, Platform, ShopOwnerMap, User, WdtOrder, WdtSyncRun
@@ -24,6 +26,50 @@ CATEGORIES = [
     {"name": "家居护理", "description": "地板清洁、玻璃清洁、空气清新、消臭喷雾", "tag": "多规格"},
     {"name": "纸品耗材", "description": "抽纸、湿巾、厨房纸、一次性清洁用品", "tag": "走量款"},
 ]
+
+
+def _parse_payload_datetime(value):
+    if value in (None, ""):
+        return None
+    text_value = str(value).strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text_value)
+    except ValueError:
+        for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                parsed = datetime.strptime(text_value, pattern)
+                break
+            except ValueError:
+                continue
+        else:
+            return None
+    return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+
+
+def ensure_order_time_columns() -> None:
+    """为已有 order_query 表补充付款/发货时间列，并回填历史快照。"""
+
+    existing_columns = {column["name"] for column in inspect(engine).get_columns("order_query")}
+    missing_columns = [column for column in ("pay_at", "consign_at") if column not in existing_columns]
+    if not missing_columns:
+        return
+
+    with engine.begin() as connection:
+        for column in missing_columns:
+            connection.execute(text(f"ALTER TABLE order_query ADD COLUMN `{column}` DATETIME NULL"))
+            connection.execute(
+                text(f"CREATE INDEX `ix_order_query_{column}` ON order_query (`{column}`)")
+            )
+
+    with SessionLocal() as db:
+        for item in db.scalars(select(WdtOrder)).all():
+            try:
+                payload = json.loads(item.payload_json or "{}")
+            except json.JSONDecodeError:
+                payload = {}
+            item.pay_at = _parse_payload_datetime(payload.get("pay_time"))
+            item.consign_at = _parse_payload_datetime(payload.get("consign_time"))
+        db.commit()
 
 
 def seed_if_missing() -> None:
@@ -55,6 +101,7 @@ def seed_if_missing() -> None:
 
 def main() -> None:
     Base.metadata.create_all(bind=engine)
+    ensure_order_time_columns()
     seed_if_missing()
     print("数据库表和演示数据初始化完成")
 
