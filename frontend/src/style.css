@@ -136,28 +136,6 @@ input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgb
 .result-header h2 { font-size: 24px; line-height: 1.2; letter-spacing: 0; }
 .result-header p { margin-top: 8px; color: var(--muted); font-size: 12px; }
 
-.dashboard-control-section { margin-bottom: 20px; }
-.dimension-section { margin-bottom: 24px; padding: 22px; border: 1px solid var(--line); border-top: 3px solid var(--green); border-radius: var(--radius); background: #ffffff; box-shadow: var(--shadow); }
-.product-dimension-section { border-top-color: var(--orange); }
-.dimension-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid #e9eef5; }
-.dimension-section-heading h2 { margin-top: 4px; color: var(--text); font-size: 20px; line-height: 1.25; }
-.dimension-section-heading p { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.5; }
-.dimension-context { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; color: var(--muted); font-size: 10px; text-align: right; }
-.dimension-context strong { color: #31445e; font-size: 15px; font-variant-numeric: tabular-nums; }
-.dimension-context span { white-space: nowrap; }
-.dimension-section .kpi-grid,
-.dimension-section .comparison-summary,
-.dimension-section .tableau-grid,
-.dimension-section .comparison-ranking-grid,
-.dimension-section .analysis-grid { margin-bottom: 16px; }
-.dimension-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.product-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 820px; }
-.dimension-comparison-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.product-comparison-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 820px; }
-.dimension-owner-panel { margin-bottom: 16px; }
-.dimension-chart-section { margin-bottom: 16px; }
-.dimension-ranking-section { margin-bottom: 16px; }
-
 .kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
 .kpi-card { padding: 18px 18px 16px; border: 1px solid var(--line); border-top: 3px solid; border-radius: var(--radius); background: #ffffff; box-shadow: var(--shadow); }
 .kpi-card.accent-blue { border-top-color: var(--blue); }
@@ -385,10 +363,6 @@ tbody tr:hover td { background: #f8fbff; }
   .detail-tools { align-items: stretch; flex-direction: column; }
   .table-footer { align-items: flex-start; flex-direction: column; }
   .result-header h2 { font-size: 21px; }
-  .dimension-section { padding: 16px; }
-  .dimension-section-heading { align-items: flex-start; flex-direction: column; }
-  .dimension-context { align-items: flex-start; text-align: left; }
-  .dimension-kpi-grid, .product-kpi-grid, .dimension-comparison-summary, .product-comparison-summary { grid-template-columns: 1fr; max-width: none; }
   .chart-modal { padding: 12px; }
   .chart-modal-dialog { max-height: calc(100vh - 24px); padding: 15px; }
   .modal-line-chart { min-height: 290px; }

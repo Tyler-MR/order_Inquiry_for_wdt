@@ -416,8 +416,6 @@ const hourlyLineCharts = computed(() => [
     chart: buildHourlySeriesChart(hourlySeries.value, 'units', 'units'),
   },
 ])
-const revenueLineCharts = computed(() => hourlyLineCharts.value.filter((line) => !line.id.includes('product')))
-const productLineCharts = computed(() => hourlyLineCharts.value.filter((line) => line.id.includes('product')))
 const expandedLineChart = computed(() => hourlyLineCharts.value.find((line) => line.id === expandedLineChartId.value) || null)
 
 function openLineChart(line) {
@@ -574,11 +572,34 @@ onBeforeUnmount(() => {
     <div v-if="successMessage" class="message success"><CheckCircle2 :size="18" /><span>{{ successMessage }}</span></div>
 
     <template v-if="result && hasOrders">
-      <section class="dashboard-control-section">
+      <section class="result-header">
+        <div>
+          <span class="eyebrow">查询结果</span>
+          <h2>近三天经营概览</h2>
+          <p>{{ formatDateTime(result.start_time) }} 至 {{ formatDateTime(result.end_time) }} · {{ result.platform_ids.length ? result.platform_ids.map((id) => platformOptions.find((item) => item.id === id)?.name || id).join('、') : '全部平台' }}</p>
+        </div>
+        <button class="secondary-button" type="button" :disabled="csvDownloading" @click="downloadCsv()"><Loader2 v-if="csvDownloading" class="spin" :size="17" /><Download v-else :size="17" />{{ csvDownloading ? '正在生成 CSV…' : '下载完整 CSV' }}</button>
+      </section>
+
+      <section class="kpi-grid">
+        <article class="kpi-card accent-blue"><div class="kpi-label"><ShoppingCart :size="17" />订单数</div><strong>{{ formatNumber(summary.order_count) }}</strong><span>明细行 {{ formatNumber(summary.detail_count) }}</span></article>
+        <article class="kpi-card accent-green"><div class="kpi-label"><TrendingUp :size="17" />成交金额</div><strong>{{ formatMoney(summary.order_amount) }}</strong><span>客单价 {{ formatMoney(summary.avg_order_amount) }}</span></article>
+        <article class="kpi-card accent-orange"><div class="kpi-label"><Package :size="17" />商品销量</div><strong>{{ formatUnits(summary.units) }}</strong><span>{{ formatNumber(summary.product_count) }} 个商品</span></article>
+        <article class="kpi-card accent-purple"><div class="kpi-label"><Store :size="17" />店铺数</div><strong>{{ formatNumber(summary.shop_count) }}</strong><span>已按店铺聚合</span></article>
+      </section>
+
+      <section class="comparison-summary">
+        <article class="comparison-card accent-green"><span>{{ comparisonTodayLabel }}实收金额</span><strong>{{ formatMoney(summary.today_amount) }}</strong><em :class="growthClass(summary.amount_growth_pct)">{{ formatGrowth(summary.amount_growth_pct) }} vs {{ comparisonYesterdayLabel }}</em></article>
+        <article class="comparison-card accent-blue"><span>{{ comparisonTodayLabel }}订单数</span><strong>{{ formatNumber(summary.today_order_count) }}</strong><em :class="growthClass(summary.order_growth_pct)">{{ formatGrowth(summary.order_growth_pct) }} vs {{ comparisonYesterdayLabel }}</em></article>
+        <article class="comparison-card accent-orange"><span>{{ comparisonTodayLabel }}商品数量</span><strong>{{ formatUnits(summary.today_units) }}</strong><em :class="growthClass(summary.units_growth_pct)">{{ formatGrowth(summary.units_growth_pct) }} vs {{ comparisonYesterdayLabel }}</em></article>
+        <article class="comparison-card comparison-context"><span>对比口径</span><strong>{{ comparisonMeta.today || '-' }}</strong><em>{{ comparisonCutoffLabel }}，同小时对比</em></article>
+      </section>
+
+      <div class="filter-owner-row">
         <section class="tableau-filter-strip">
         <div class="filter-strip-heading">
           <div><span class="eyebrow">看板筛选器</span><h3>统一筛选条件</h3><p>一组筛选器统一联动销售额、产品维度、折线图和排名。</p></div>
-          <div class="filter-strip-actions"><span class="filter-count">已启用 {{ activeDashboardFilterCount }} 项</span><span v-if="dashboardFiltersDirty" class="filter-pending">待查询</span><button class="primary-button compact-button" type="button" :disabled="loading" @click="applyDashboardFilters"><Search :size="14" />按条件查询</button><button class="secondary-button compact-button" type="button" :disabled="csvDownloading" @click="downloadCsv()"><Loader2 v-if="csvDownloading" class="spin" :size="14" /><Download v-else :size="14" />{{ csvDownloading ? '生成中…' : '导出 CSV' }}</button><button class="text-button" type="button" @click="clearDashboardFilters">清除看板筛选</button></div>
+          <div class="filter-strip-actions"><span class="filter-count">已启用 {{ activeDashboardFilterCount }} 项</span><span v-if="dashboardFiltersDirty" class="filter-pending">待查询</span><button class="primary-button compact-button" type="button" :disabled="loading" @click="applyDashboardFilters"><Search :size="14" />按条件查询</button><button class="text-button" type="button" @click="clearDashboardFilters">清除看板筛选</button></div>
         </div>
           <div class="unified-filter-grid">
           <label class="filter-field"><span>平台筛选</span><select v-model="dashboardFilters.platformId" @change="markDashboardFiltersDirty"><option v-for="option in platformOptions" :key="option.id" :value="option.id">{{ option.name }}</option></select></label>
@@ -592,27 +613,8 @@ onBeforeUnmount(() => {
           <label class="filter-field"><span>日期层级</span><details class="filter-dropdown"><summary>{{ selectedFilterLabel(dashboardFilters.dateLayers, '(多选)') }} <b>⌄</b></summary><div class="filter-menu"><label class="filter-option"><input type="checkbox" :checked="!dashboardFilters.dateLayers.length" @change="dashboardFilters.dateLayers = []; markDashboardFiltersDirty()" /> (全部)</label><label v-for="layer in dateLayerOptions" :key="layer" class="filter-option"><input v-model="dashboardFilters.dateLayers" type="checkbox" :value="layer" @change="markDashboardFiltersDirty" /> {{ layer }}</label></div></details></label>
           </div>
         </section>
-      </section>
 
-      <section class="dimension-section order-revenue-section">
-        <div class="dimension-section-heading">
-          <div><span class="eyebrow">订单收入维度</span><h2>订单与收入</h2><p>订单规模、实收金额、店铺和负责人表现</p></div>
-          <div class="dimension-context"><strong>{{ comparisonMeta.today || '-' }}</strong><span>{{ comparisonCutoffLabel }} · {{ activeTimeFieldLabel }}</span></div>
-        </div>
-
-        <section class="kpi-grid dimension-kpi-grid order-kpi-grid">
-          <article class="kpi-card accent-blue"><div class="kpi-label"><ShoppingCart :size="17" />订单数</div><strong>{{ formatNumber(summary.order_count) }}</strong><span>明细行 {{ formatNumber(summary.detail_count) }}</span></article>
-          <article class="kpi-card accent-green"><div class="kpi-label"><TrendingUp :size="17" />成交金额</div><strong>{{ formatMoney(summary.order_amount) }}</strong><span>客单价 {{ formatMoney(summary.avg_order_amount) }}</span></article>
-          <article class="kpi-card accent-purple"><div class="kpi-label"><Store :size="17" />店铺数</div><strong>{{ formatNumber(summary.shop_count) }}</strong><span>已按店铺聚合</span></article>
-        </section>
-
-        <section class="comparison-summary dimension-comparison-summary order-comparison-summary">
-          <article class="comparison-card accent-green"><span>{{ comparisonTodayLabel }}实收金额</span><strong>{{ formatMoney(summary.today_amount) }}</strong><em :class="growthClass(summary.amount_growth_pct)">{{ formatGrowth(summary.amount_growth_pct) }} vs {{ comparisonYesterdayLabel }}</em></article>
-          <article class="comparison-card accent-blue"><span>{{ comparisonTodayLabel }}订单数</span><strong>{{ formatNumber(summary.today_order_count) }}</strong><em :class="growthClass(summary.order_growth_pct)">{{ formatGrowth(summary.order_growth_pct) }} vs {{ comparisonYesterdayLabel }}</em></article>
-          <article class="comparison-card comparison-context"><span>对比口径</span><strong>{{ comparisonMeta.today || '-' }}</strong><em>{{ comparisonCutoffLabel }}，同小时对比</em></article>
-        </section>
-
-        <article class="panel ranking-panel owner-panel dimension-owner-panel">
+        <article class="panel ranking-panel owner-panel">
           <div class="panel-heading"><div><h3>负责人对比{{ comparisonYesterdayLabel }}</h3><p>按店铺负责人汇总{{ comparisonTodayLabel }}实收</p></div><Store :size="18" class="panel-icon" /></div>
           <div v-if="visibleOwnerComparisonRows.length" class="owner-bar-chart">
             <div v-for="owner in visibleOwnerComparisonRows" :key="owner.owner_name" :data-owner-name="owner.owner_name" :class="['owner-bar-item', 'is-clickable', { 'is-selected': dashboardFilters.ownerNames.includes(owner.owner_name) }]" role="button" tabindex="0" :title="`${owner.owner_name}：${formatMoney(owner.today_amount)}，${formatGrowth(owner.amount_growth_pct)}`" @click="selectDashboardDimension('owner', owner.owner_name)" @keydown.enter.prevent="selectDashboardDimension('owner', owner.owner_name)" @keydown.space.prevent="selectDashboardDimension('owner', owner.owner_name)">
@@ -626,13 +628,14 @@ onBeforeUnmount(() => {
           <div v-else class="mini-empty">暂无已匹配负责人数据</div>
           <div class="mapping-note">负责人映射覆盖 {{ formatNumber(comparisonMeta.owner_mapping_coverage_pct, 1) }}% 订单</div>
         </article>
+      </div>
 
-      <section class="tableau-grid dimension-chart-section">
+      <section class="tableau-grid">
         <article class="panel hourly-panel tableau-line-panel">
-          <div class="panel-heading"><div><h3>订单收入趋势</h3><p>24 小时{{ activeTimeFieldLabel }}金额趋势 · {{ hourlySeries.length || 2 }} 个日期同小时对比</p></div><TrendingUp :size="18" class="panel-icon" /></div>
-          <div class="hourly-legend"><span v-for="series in (revenueLineCharts[0]?.chart.series || [])" :key="`revenue-legend-${series.key}`"><i class="legend-swatch" :style="{ background: series.color }"></i>{{ series.label }}</span><span class="legend-hint">{{ activeTimeFieldLabel }} · {{ comparisonCutoffLabel }}</span></div>
+          <div class="panel-heading"><div><h3>24 小时{{ activeTimeFieldLabel }}折线</h3><p>{{ hourlySeries.length || 2 }} 个日期的同小时趋势</p></div></div>
+          <div class="hourly-legend"><span v-for="series in (hourlyLineCharts[0]?.chart.series || [])" :key="`legend-${series.key}`"><i class="legend-swatch" :style="{ background: series.color }"></i>{{ series.label }}</span><span class="legend-hint">{{ activeTimeFieldLabel }} · {{ comparisonCutoffLabel }}</span></div>
           <div v-if="hourlyRows.length" class="hourly-line-grid">
-            <article v-for="line in revenueLineCharts" :key="line.id" class="hourly-line-card">
+            <article v-for="line in hourlyLineCharts" :key="line.id" class="hourly-line-card">
               <div class="line-card-heading"><div><strong>{{ line.title }}</strong><span>{{ line.subtitle }}</span></div><div class="line-card-actions"><em>{{ line.unit }}</em><button class="chart-zoom-button" type="button" :aria-label="`放大${line.title}`" :title="`放大${line.title}`" @click="openLineChart(line)"><Maximize2 :size="14" /></button></div></div>
               <div class="line-chart">
                 <div class="line-y-axis"><span>{{ line.chart.maxLabel }}</span><span>{{ line.chart.midLabel }}</span><span>{{ line.chart.zeroLabel }}</span></div>
@@ -643,7 +646,7 @@ onBeforeUnmount(() => {
                     <template v-for="point in series.points" :key="`${series.key}-${point.hour}`">
                       <template v-if="point.showPoint">
                         <circle :cx="point.x" :cy="point.y" r="2.6" class="line-point" :style="{ stroke: series.color }" />
-                        <title>{{ point.label }}：{{ series.label }} {{ formatLineValue(point.value, 'amount') }}</title>
+                        <title>{{ point.label }}：{{ series.label }} {{ formatLineValue(point.value, line.id.includes('product') ? 'units' : 'amount') }}</title>
                       </template>
                     </template>
                   </g>
@@ -652,8 +655,9 @@ onBeforeUnmount(() => {
               </div>
             </article>
           </div>
-          <div v-else class="mini-empty">暂无小时金额趋势</div>
+          <div v-else class="mini-empty">暂无小时折线数据</div>
         </article>
+
       </section>
 
       <div v-if="expandedLineChart" class="chart-modal" role="dialog" aria-modal="true" :aria-label="`${expandedLineChart.title}放大看板`" @click.self="closeExpandedLineChart">
@@ -692,12 +696,20 @@ onBeforeUnmount(() => {
         </section>
       </div>
 
-      <section class="comparison-ranking-grid dimension-ranking-section">
+      <section class="comparison-ranking-grid">
         <article class="panel ranking-panel">
           <div class="panel-heading"><div><h3>店铺对比{{ comparisonYesterdayLabel }}排名</h3><p>按{{ comparisonTodayLabel }}实收金额排序</p></div><Store :size="18" class="panel-icon" /></div>
           <div class="ranking-list comparison-ranking-list">
             <div v-for="shop in shopComparisonRows" :key="`${shop.shop_id}-${shop.shop_name}`" :data-shop-name="shop.shop_name" :class="['ranking-row', 'comparison-ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.shopNames.includes(shop.shop_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('shop', shop.shop_name)" @keydown.enter.prevent="selectDashboardDimension('shop', shop.shop_name)" @keydown.space.prevent="selectDashboardDimension('shop', shop.shop_name)">
               <b>{{ shop.rank }}</b><div class="ranking-main"><strong :title="shop.shop_name">{{ shop.shop_name }}</strong><div class="bar-track"><i :style="{ width: barWidth(shop.today_amount, maxShopComparisonAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatMoney(shop.today_amount) }}</strong><span><em :class="growthClass(shop.amount_growth_pct)">{{ formatGrowth(shop.amount_growth_pct) }}</em></span></div>
+            </div>
+          </div>
+        </article>
+        <article class="panel ranking-panel">
+          <div class="panel-heading"><div><h3>商品对比{{ comparisonYesterdayLabel }}排名</h3><p>按商品规格{{ comparisonTodayLabel }}实收金额排序</p></div><Package :size="18" class="panel-icon" /></div>
+          <div class="ranking-list comparison-ranking-list">
+            <div v-for="product in productComparisonRows" :key="`${product.product_no}-${product.spec_name}`" :data-product-name="product.product_name" :class="['ranking-row', 'comparison-ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.productNames.includes(product.product_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('product', product.product_name)" @keydown.enter.prevent="selectDashboardDimension('product', product.product_name)" @keydown.space.prevent="selectDashboardDimension('product', product.product_name)">
+              <b>{{ product.rank }}</b><div class="ranking-main"><strong :title="product.product_name">{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small><div class="bar-track"><i class="orange" :style="{ width: barWidth(product.today_amount, maxProductComparisonAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatMoney(product.today_amount) }}</strong><span>{{ formatUnits(product.today_units) }} 件 · <em :class="growthClass(product.amount_growth_pct)">{{ formatGrowth(product.amount_growth_pct) }}</em></span></div>
             </div>
           </div>
         </article>
@@ -714,77 +726,15 @@ onBeforeUnmount(() => {
           </div>
         </article>
 
-      </section>
-
-      </section>
-
-      <section class="dimension-section product-dimension-section">
-        <div class="dimension-section-heading">
-          <div><span class="eyebrow">商品维度</span><h2>商品销量与规格</h2><p>商品销量、商品种类、规格和 SKU 表现</p></div>
-          <div class="dimension-context"><strong>{{ formatNumber(summary.product_count) }} 个商品</strong><span>按商品规格聚合</span></div>
-        </div>
-
-        <section class="kpi-grid dimension-kpi-grid product-kpi-grid">
-          <article class="kpi-card accent-orange"><div class="kpi-label"><Package :size="17" />商品销量</div><strong>{{ formatUnits(summary.units) }}</strong><span>{{ formatNumber(summary.product_count) }} 个商品</span></article>
-          <article class="kpi-card accent-purple"><div class="kpi-label"><Package :size="17" />商品种类</div><strong>{{ formatNumber(summary.product_count) }}</strong><span>已关联商品基础表</span></article>
-        </section>
-
-        <section class="comparison-summary dimension-comparison-summary product-comparison-summary">
-          <article class="comparison-card accent-orange"><span>{{ comparisonTodayLabel }}商品数量</span><strong>{{ formatUnits(summary.today_units) }}</strong><em :class="growthClass(summary.units_growth_pct)">{{ formatGrowth(summary.units_growth_pct) }} vs {{ comparisonYesterdayLabel }}</em></article>
-          <article class="comparison-card comparison-context"><span>商品口径</span><strong>{{ comparisonMeta.today || '-' }}</strong><em>按商品规格和 SKU 聚合</em></article>
-        </section>
-
-        <section class="tableau-grid dimension-chart-section">
-          <article class="panel hourly-panel tableau-line-panel">
-            <div class="panel-heading"><div><h3>商品销量趋势</h3><p>24 小时{{ activeTimeFieldLabel }}销量趋势 · {{ hourlySeries.length || 2 }} 个日期同小时对比</p></div><Package :size="18" class="panel-icon" /></div>
-            <div class="hourly-legend"><span v-for="series in (productLineCharts[0]?.chart.series || [])" :key="`product-legend-${series.key}`"><i class="legend-swatch" :style="{ background: series.color }"></i>{{ series.label }}</span><span class="legend-hint">{{ activeTimeFieldLabel }} · {{ comparisonCutoffLabel }}</span></div>
-            <div v-if="hourlyRows.length" class="hourly-line-grid">
-              <article v-for="line in productLineCharts" :key="line.id" class="hourly-line-card">
-                <div class="line-card-heading"><div><strong>{{ line.title }}</strong><span>{{ line.subtitle }}</span></div><div class="line-card-actions"><em>{{ line.unit }}</em><button class="chart-zoom-button" type="button" :aria-label="`放大${line.title}`" :title="`放大${line.title}`" @click="openLineChart(line)"><Maximize2 :size="14" /></button></div></div>
-                <div class="line-chart">
-                  <div class="line-y-axis"><span>{{ line.chart.maxLabel }}</span><span>{{ line.chart.midLabel }}</span><span>{{ line.chart.zeroLabel }}</span></div>
-                  <svg :viewBox="`0 0 ${line.chart.width} ${line.chart.height}`" preserveAspectRatio="none" role="img" :aria-label="line.title">
-                    <line v-for="grid in [0, 1, 2]" :key="grid" x1="30" :y1="16 + grid * 97" x2="730" :y2="16 + grid * 97" class="line-grid" />
-                    <polyline v-for="series in line.chart.series" :key="`${line.id}-${series.key}`" :points="series.points.map((point) => `${point.x},${point.y}`).join(' ')" class="comparison-line" :style="{ stroke: series.color, strokeDasharray: series.dash || 'none' }" />
-                    <g v-for="series in line.chart.series" :key="`${line.id}-points-${series.key}`">
-                      <template v-for="point in series.points" :key="`${series.key}-${point.hour}`">
-                        <template v-if="point.showPoint">
-                          <circle :cx="point.x" :cy="point.y" r="2.6" class="line-point" :style="{ stroke: series.color }" />
-                          <title>{{ point.label }}：{{ series.label }} {{ formatLineValue(point.value, 'units') }}</title>
-                        </template>
-                      </template>
-                    </g>
-                  </svg>
-                  <div class="line-x-axis" :style="{ gridTemplateColumns: `repeat(${line.chart.xLabels.length}, minmax(0, 1fr))` }"><span v-for="tick in line.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
-                </div>
-              </article>
+        <article class="panel ranking-panel">
+          <div class="panel-heading"><div><h3>商品排行</h3><p>按商品行金额排序</p></div><Package :size="18" class="panel-icon" /></div>
+          <div class="ranking-list">
+            <div v-for="(product, index) in result.products" :key="`${product.product_no}-${product.spec_name}`" :data-product-name="product.product_name" :class="['ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.productNames.includes(product.product_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('product', product.product_name)" @keydown.enter.prevent="selectDashboardDimension('product', product.product_name)" @keydown.space.prevent="selectDashboardDimension('product', product.product_name)">
+              <b>{{ index + 1 }}</b><div class="ranking-main"><strong :title="product.product_name">{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small><div class="bar-track"><i class="orange" :style="{ width: barWidth(product.order_amount, maxProductAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatUnits(product.units) }} 件</strong><span>{{ formatMoney(product.order_amount) }}</span></div>
             </div>
-            <div v-else class="mini-empty">暂无小时销量趋势</div>
-          </article>
-        </section>
-
-        <section class="comparison-ranking-grid dimension-ranking-section">
-          <article class="panel ranking-panel">
-            <div class="panel-heading"><div><h3>商品对比{{ comparisonYesterdayLabel }}排名</h3><p>按商品规格{{ comparisonTodayLabel }}实收金额排序</p></div><Package :size="18" class="panel-icon" /></div>
-            <div class="ranking-list comparison-ranking-list">
-              <div v-for="product in productComparisonRows" :key="`${product.product_no}-${product.spec_name}`" :data-product-name="product.product_name" :class="['ranking-row', 'comparison-ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.productNames.includes(product.product_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('product', product.product_name)" @keydown.enter.prevent="selectDashboardDimension('product', product.product_name)" @keydown.space.prevent="selectDashboardDimension('product', product.product_name)">
-                <b>{{ product.rank }}</b><div class="ranking-main"><strong :title="product.product_name">{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small><div class="bar-track"><i class="orange" :style="{ width: barWidth(product.today_amount, maxProductComparisonAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatMoney(product.today_amount) }}</strong><span>{{ formatUnits(product.today_units) }} 件 · <em :class="growthClass(product.amount_growth_pct)">{{ formatGrowth(product.amount_growth_pct) }}</em></span></div>
-              </div>
-            </div>
-          </article>
-        </section>
-
-        <section class="analysis-grid ranking-overview-grid dimension-ranking-section">
-          <article class="panel ranking-panel">
-            <div class="panel-heading"><div><h3>商品排行</h3><p>按商品行金额排序</p></div><Package :size="18" class="panel-icon" /></div>
-            <div class="ranking-list">
-              <div v-for="(product, index) in result.products" :key="`${product.product_no}-${product.spec_name}`" :data-product-name="product.product_name" :class="['ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.productNames.includes(product.product_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('product', product.product_name)" @keydown.enter.prevent="selectDashboardDimension('product', product.product_name)" @keydown.space.prevent="selectDashboardDimension('product', product.product_name)">
-                <b>{{ index + 1 }}</b><div class="ranking-main"><strong :title="product.product_name">{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small><div class="bar-track"><i class="orange" :style="{ width: barWidth(product.order_amount, maxProductAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatUnits(product.units) }} 件</strong><span>{{ formatMoney(product.order_amount) }}</span></div>
-              </div>
-              <div v-if="!result.products.length" class="mini-empty">暂无商品数据</div>
-            </div>
-          </article>
-        </section>
+            <div v-if="!result.products.length" class="mini-empty">暂无商品数据</div>
+          </div>
+        </article>
       </section>
 
     </template>
