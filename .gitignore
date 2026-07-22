@@ -7,5 +7,8 @@ __pycache__/
 venv/
 private/
 sync/
+cloudflared/*.json
+cloudflared/cert.pem
+cloudflared/config.yml
 .idea/
 .vscode/
