@@ -298,6 +298,26 @@ def _date_layer(event_at: datetime | None) -> str:
     return ""
 
 
+def _dashboard_comparison_date(
+    *,
+    fallback: date,
+    filters: dict[str, Any] | None,
+) -> date:
+    """Return the latest explicitly selected date as the comparison base date."""
+    date_layers = set(_clean_filter_values((filters or {}).get("date_layers")))
+    if not date_layers:
+        return fallback
+
+    today = datetime.now(LOCAL_TZ).date()
+    layer_offsets = {"今日": 0, "昨日": 1, "前天": 2}
+    selected_dates = [
+        today - timedelta(days=offset)
+        for layer, offset in layer_offsets.items()
+        if layer in date_layers
+    ]
+    return max(selected_dates, default=fallback)
+
+
 def _filter_options(orders: list[dict[str, Any]]) -> dict[str, Any]:
     shops: set[str] = set()
     skus: set[str] = set()
@@ -419,12 +439,19 @@ def read_order_analysis(
         time_type=time_type,
         filters=dashboard_filters,
     )
+    comparison_date = _dashboard_comparison_date(
+        fallback=end_time.date(),
+        filters=dashboard_filters,
+    )
+    time_truncated = bool((dashboard_filters or {}).get("time_truncated", True))
     result = build_analysis(
         filtered_orders,
         start_time=start_time,
         end_time=end_time,
         platform_ids=selected_platforms,
         time_type=time_type,
+        comparison_date=comparison_date,
+        time_truncated=time_truncated,
         include_rows=include_rows,
     )
     result.update(

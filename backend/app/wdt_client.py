@@ -388,6 +388,8 @@ def build_analysis(
     end_time: datetime,
     platform_ids: list[str],
     time_type: int,
+    comparison_date: date | None = None,
+    time_truncated: bool = True,
     include_rows: bool = True,
     row_preview_limit: int = 100,
 ) -> dict[str, Any]:
@@ -429,10 +431,24 @@ def build_analysis(
     }
     comparison_totals = _new_comparison_entry()
     owner_map = _load_shop_owner_map()
-    comparison_date = end_time.date()
+    comparison_date = comparison_date or end_time.date()
     local_today = datetime.now(LOCAL_TZ).date()
     local_current_hour = datetime.now(LOCAL_TZ).hour
-    comparison_cutoff_hour = local_current_hour if comparison_date == local_today else 24
+    comparison_cutoff_hour = (
+        local_current_hour
+        if comparison_date == local_today and time_truncated
+        else 24
+    )
+    comparison_previous_date = comparison_date - timedelta(days=1)
+    comparison_day_labels = {0: "今日", 1: "昨日", 2: "前天"}
+    comparison_today_label = comparison_day_labels.get(
+        (local_today - comparison_date).days,
+        comparison_date.isoformat(),
+    )
+    comparison_yesterday_label = comparison_day_labels.get(
+        (local_today - comparison_previous_date).days,
+        comparison_previous_date.isoformat(),
+    )
     matched_owner_orders = 0
     order_amount = 0.0
     paid_amount = 0.0
@@ -447,7 +463,7 @@ def build_analysis(
         if event_at and event_at.hour < comparison_cutoff_hour:
             if event_at.date() == comparison_date:
                 comparison_bucket = "today"
-            elif event_at.date() == comparison_date - timedelta(days=1):
+            elif event_at.date() == comparison_previous_date:
                 comparison_bucket = "yesterday"
         order_amount += amount
         paid_amount += _first_number(order, ("paid", "real_amount", "receivable"))
@@ -667,7 +683,9 @@ def build_analysis(
         "owner_comparison": owner_comparison_rows,
         "comparison": {
             "today": comparison_date.isoformat(),
-            "yesterday": (comparison_date - timedelta(days=1)).isoformat(),
+            "yesterday": comparison_previous_date.isoformat(),
+            "today_label": comparison_today_label,
+            "yesterday_label": comparison_yesterday_label,
             "cutoff_hour": comparison_cutoff_hour,
             "analysis_time_field": "pay_time",
             "owner_mapping_source": "店铺信息表",

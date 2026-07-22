@@ -368,6 +368,14 @@ function growthClass(value) {
 }
 
 const hourlyRows = computed(() => result.value?.hourly || [])
+const comparisonMeta = computed(() => result.value?.comparison || {})
+const comparisonTodayLabel = computed(() => comparisonMeta.value.today_label || comparisonMeta.value.today || '当前日')
+const comparisonYesterdayLabel = computed(() => comparisonMeta.value.yesterday_label || comparisonMeta.value.yesterday || '上一日')
+const comparisonCutoffLabel = computed(() => {
+  const cutoff = Number(comparisonMeta.value.cutoff_hour)
+  if (!Number.isFinite(cutoff)) return '当前小时'
+  return cutoff >= 24 ? '完整 24 小时' : `截至 ${cutoff}:00`
+})
 
 function formatLineValue(value, valueType) {
   return valueType === 'units' ? formatUnits(value) : formatNumber(value, 0)
@@ -432,28 +440,28 @@ const hourlyLineCharts = computed(() => [
   {
     id: 'sales-cumulative',
     title: '累计实收金额',
-    subtitle: '24小时对比昨日增长',
+    subtitle: `24小时对比${comparisonYesterdayLabel.value}增长`,
     unit: '元',
     chart: buildHourlyLineChart(hourlyRows.value, 'today_cumulative_amount', 'yesterday_cumulative_amount', 'amount'),
   },
   {
     id: 'sales-hourly',
     title: '每小时实收金额',
-    subtitle: '24小时对比昨日波动',
+    subtitle: `24小时对比${comparisonYesterdayLabel.value}波动`,
     unit: '元',
     chart: buildHourlyLineChart(hourlyRows.value, 'today_amount', 'yesterday_amount', 'amount'),
   },
   {
     id: 'product-cumulative',
     title: '累计商品数量',
-    subtitle: '产品维度 · 24小时增长',
+    subtitle: `产品维度 · 24小时对比${comparisonYesterdayLabel.value}增长`,
     unit: '件',
     chart: buildHourlyLineChart(hourlyRows.value, 'today_cumulative_units', 'yesterday_cumulative_units', 'units'),
   },
   {
     id: 'product-hourly',
     title: '每小时商品数量',
-    subtitle: '产品维度 · 24小时波动',
+    subtitle: `产品维度 · 24小时对比${comparisonYesterdayLabel.value}波动`,
     unit: '件',
     chart: buildHourlyLineChart(hourlyRows.value, 'today_units', 'yesterday_units', 'units'),
   },
@@ -498,7 +506,6 @@ const visibleOwnerFilterOptions = computed(() => filterList(filterOptions.value.
 const visibleOwnerComparisonRows = computed(() => ownerComparisonRows.value
   .filter((owner) => !(isPddDashboard.value && owner.owner_name === hiddenPddOwnerName))
   .map((owner, index) => ({ ...owner, rank: index + 1 })))
-const comparisonMeta = computed(() => result.value?.comparison || {})
 const filterOptions = computed(() => result.value?.filter_options || {
   brands: [],
   sku_codes: [],
@@ -657,10 +664,10 @@ onBeforeUnmount(() => {
       </section>
 
       <section class="comparison-summary">
-        <article class="comparison-card accent-green"><span>今日实收金额</span><strong>{{ formatMoney(summary.today_amount) }}</strong><em :class="growthClass(summary.amount_growth_pct)">{{ formatGrowth(summary.amount_growth_pct) }} vs 昨日</em></article>
-        <article class="comparison-card accent-blue"><span>今日订单数</span><strong>{{ formatNumber(summary.today_order_count) }}</strong><em :class="growthClass(summary.order_growth_pct)">{{ formatGrowth(summary.order_growth_pct) }} vs 昨日</em></article>
-        <article class="comparison-card accent-orange"><span>今日商品数量</span><strong>{{ formatUnits(summary.today_units) }}</strong><em :class="growthClass(summary.units_growth_pct)">{{ formatGrowth(summary.units_growth_pct) }} vs 昨日</em></article>
-        <article class="comparison-card comparison-context"><span>对比口径</span><strong>{{ comparisonMeta.today || '-' }}</strong><em>截至 {{ comparisonMeta.cutoff_hour ?? '-' }}:00，同小时对比</em></article>
+        <article class="comparison-card accent-green"><span>{{ comparisonTodayLabel }}实收金额</span><strong>{{ formatMoney(summary.today_amount) }}</strong><em :class="growthClass(summary.amount_growth_pct)">{{ formatGrowth(summary.amount_growth_pct) }} vs {{ comparisonYesterdayLabel }}</em></article>
+        <article class="comparison-card accent-blue"><span>{{ comparisonTodayLabel }}订单数</span><strong>{{ formatNumber(summary.today_order_count) }}</strong><em :class="growthClass(summary.order_growth_pct)">{{ formatGrowth(summary.order_growth_pct) }} vs {{ comparisonYesterdayLabel }}</em></article>
+        <article class="comparison-card accent-orange"><span>{{ comparisonTodayLabel }}商品数量</span><strong>{{ formatUnits(summary.today_units) }}</strong><em :class="growthClass(summary.units_growth_pct)">{{ formatGrowth(summary.units_growth_pct) }} vs {{ comparisonYesterdayLabel }}</em></article>
+        <article class="comparison-card comparison-context"><span>对比口径</span><strong>{{ comparisonMeta.today || '-' }}</strong><em>{{ comparisonCutoffLabel }}，同小时对比</em></article>
       </section>
 
       <div class="filter-owner-row">
@@ -681,7 +688,7 @@ onBeforeUnmount(() => {
         </section>
 
         <article class="panel ranking-panel owner-panel">
-          <div class="panel-heading"><div><h3>负责人对比昨日</h3><p>按店铺负责人汇总今日实收</p></div><Store :size="18" class="panel-icon" /></div>
+          <div class="panel-heading"><div><h3>负责人对比{{ comparisonYesterdayLabel }}</h3><p>按店铺负责人汇总{{ comparisonTodayLabel }}实收</p></div><Store :size="18" class="panel-icon" /></div>
           <div v-if="visibleOwnerComparisonRows.length" class="owner-bar-chart">
             <div v-for="owner in visibleOwnerComparisonRows" :key="owner.owner_name" :data-owner-name="owner.owner_name" :class="['owner-bar-item', 'is-clickable', { 'is-selected': dashboardFilters.ownerNames.includes(owner.owner_name) }]" role="button" tabindex="0" :title="`${owner.owner_name}：${formatMoney(owner.today_amount)}，${formatGrowth(owner.amount_growth_pct)}`" @click="selectDashboardDimension('owner', owner.owner_name)" @keydown.enter.prevent="selectDashboardDimension('owner', owner.owner_name)" @keydown.space.prevent="selectDashboardDimension('owner', owner.owner_name)">
               <strong class="owner-bar-value">{{ formatMoney(owner.today_amount) }}</strong>
@@ -699,7 +706,7 @@ onBeforeUnmount(() => {
       <section class="tableau-grid">
         <article class="panel hourly-panel tableau-line-panel">
           <div class="panel-heading"><div><h3>24 小时付款时间折线</h3><p>{{ comparisonMeta.today || '-' }} 与 {{ comparisonMeta.yesterday || '-' }} 的同小时趋势</p></div></div>
-          <div class="hourly-legend"><span><i class="legend-swatch today"></i>今日</span><span><i class="legend-swatch yesterday"></i>昨日</span><span class="legend-hint">付款时间 · 截至当前小时</span></div>
+          <div class="hourly-legend"><span><i class="legend-swatch today"></i>{{ comparisonTodayLabel }}</span><span><i class="legend-swatch yesterday"></i>{{ comparisonYesterdayLabel }}</span><span class="legend-hint">付款时间 · {{ comparisonCutoffLabel }}</span></div>
           <div v-if="hourlyRows.length" class="hourly-line-grid">
             <article v-for="line in hourlyLineCharts" :key="line.id" class="hourly-line-card">
               <div class="line-card-heading"><div><strong>{{ line.title }}</strong><span>{{ line.subtitle }}</span></div><div class="line-card-actions"><em>{{ line.unit }}</em><button class="chart-zoom-button" type="button" :aria-label="`放大${line.title}`" :title="`放大${line.title}`" @click="openLineChart(line)"><Maximize2 :size="14" /></button></div></div>
@@ -713,7 +720,7 @@ onBeforeUnmount(() => {
                     <template v-if="point.showPoint">
                       <circle :cx="point.x" :cy="point.yesterdayY" r="2.6" class="line-point yesterday" />
                       <circle :cx="point.x" :cy="point.todayY" r="2.6" class="line-point today" />
-                      <title>{{ point.label }}：今日 {{ formatLineValue(point.today, line.id.includes('product') ? 'units' : 'amount') }} / 昨日 {{ formatLineValue(point.yesterday, line.id.includes('product') ? 'units' : 'amount') }}</title>
+                      <title>{{ point.label }}：{{ comparisonTodayLabel }} {{ formatLineValue(point.today, line.id.includes('product') ? 'units' : 'amount') }} / {{ comparisonYesterdayLabel }} {{ formatLineValue(point.yesterday, line.id.includes('product') ? 'units' : 'amount') }}</title>
                     </template>
                   </g>
                 </svg>
@@ -729,14 +736,14 @@ onBeforeUnmount(() => {
       <div v-if="expandedLineChart" class="chart-modal" role="dialog" aria-modal="true" :aria-label="`${expandedLineChart.title}放大看板`" @click.self="closeExpandedLineChart">
         <section class="chart-modal-dialog">
           <div class="chart-modal-heading"><div><span class="eyebrow">节点明细</span><h3>{{ expandedLineChart.title }}</h3><p>{{ expandedLineChart.subtitle }} · {{ expandedLineChart.unit }}</p></div><button class="modal-close-button" type="button" aria-label="关闭放大看板" title="关闭" @click="closeExpandedLineChart"><X :size="18" /></button></div>
-          <div class="hourly-legend modal-legend"><span><i class="legend-swatch today"></i>今日</span><span><i class="legend-swatch yesterday"></i>昨日</span><span class="legend-hint">点击右上角按钮或按 Esc 关闭</span></div>
+          <div class="hourly-legend modal-legend"><span><i class="legend-swatch today"></i>{{ comparisonTodayLabel }}</span><span><i class="legend-swatch yesterday"></i>{{ comparisonYesterdayLabel }}</span><span class="legend-hint">点击右上角按钮或按 Esc 关闭</span></div>
           <div class="line-chart modal-line-chart">
             <div class="line-y-axis"><span>{{ expandedLineChart.chart.maxLabel }}</span><span>{{ expandedLineChart.chart.midLabel }}</span><span>{{ expandedLineChart.chart.zeroLabel }}</span></div>
             <svg :viewBox="`0 0 ${expandedLineChart.chart.width} ${expandedLineChart.chart.height}`" preserveAspectRatio="none" role="img" :aria-label="expandedLineChart.title">
               <line v-for="grid in [0, 1, 2]" :key="grid" x1="30" :y1="16 + grid * 97" x2="730" :y2="16 + grid * 97" class="line-grid" />
               <polyline :points="expandedLineChart.chart.polylineYesterday" class="comparison-line yesterday" />
               <polyline :points="expandedLineChart.chart.polylineToday" class="comparison-line today" />
-              <g v-for="point in expandedLineChart.chart.points" :key="point.hour" tabindex="0" role="button" :aria-label="`${point.label} 今日 ${formatLineValue(point.today, lineValueType(expandedLineChart))}，昨日 ${formatLineValue(point.yesterday, lineValueType(expandedLineChart))}，增长 ${lineGrowth(point.today, point.yesterday)}`" @mouseenter="showLinePoint(point)" @focus="showLinePoint(point)" @click="showLinePoint(point)">
+              <g v-for="point in expandedLineChart.chart.points" :key="point.hour" tabindex="0" role="button" :aria-label="`${point.label} ${comparisonTodayLabel} ${formatLineValue(point.today, lineValueType(expandedLineChart))}，${comparisonYesterdayLabel} ${formatLineValue(point.yesterday, lineValueType(expandedLineChart))}，增长 ${lineGrowth(point.today, point.yesterday)}`" @mouseenter="showLinePoint(point)" @focus="showLinePoint(point)" @click="showLinePoint(point)">
                 <circle :cx="point.x" :cy="point.yesterdayY" r="10" class="line-hit-area" @mouseenter="showLinePoint(point)" @click.stop="showLinePoint(point)" />
                 <circle :cx="point.x" :cy="point.yesterdayY" r="3.5" :class="['line-point yesterday', { active: activeLinePointHour === point.hour }]" />
                 <circle :cx="point.x" :cy="point.todayY" r="10" class="line-hit-area" @mouseenter="showLinePoint(point)" @click.stop="showLinePoint(point)" />
@@ -746,8 +753,8 @@ onBeforeUnmount(() => {
               <g v-if="activeLinePoint" class="line-point-tooltip" :transform="`translate(${pointTooltipX(activeLinePoint)}, ${pointTooltipY(activeLinePoint)})`">
                 <rect width="168" height="78" rx="5" />
                 <text x="8" y="15" class="tooltip-title">{{ activeLinePoint.label }}</text>
-                <text x="8" y="31">今日：{{ formatLineValue(activeLinePoint.today, lineValueType(expandedLineChart)) }}{{ expandedLineChart.unit }}</text>
-                <text x="8" y="47">昨日：{{ formatLineValue(activeLinePoint.yesterday, lineValueType(expandedLineChart)) }}{{ expandedLineChart.unit }}</text>
+                <text x="8" y="31">{{ comparisonTodayLabel }}：{{ formatLineValue(activeLinePoint.today, lineValueType(expandedLineChart)) }}{{ expandedLineChart.unit }}</text>
+                <text x="8" y="47">{{ comparisonYesterdayLabel }}：{{ formatLineValue(activeLinePoint.yesterday, lineValueType(expandedLineChart)) }}{{ expandedLineChart.unit }}</text>
                 <text x="8" y="63">差值：{{ formatLineValue(activeLinePoint.today - activeLinePoint.yesterday, lineValueType(expandedLineChart)) }}{{ expandedLineChart.unit }}</text>
                 <text x="8" y="74" :class="growthClass(activeLinePoint.today - activeLinePoint.yesterday)">增长：{{ lineGrowth(activeLinePoint.today, activeLinePoint.yesterday) }}</text>
               </g>
@@ -756,7 +763,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="chart-node-table-wrap">
             <table class="chart-node-table">
-              <thead><tr><th>时间节点</th><th>今日{{ expandedLineChart.unit }}</th><th>昨日{{ expandedLineChart.unit }}</th><th>差值</th><th>增长</th></tr></thead>
+              <thead><tr><th>时间节点</th><th>{{ comparisonTodayLabel }}{{ expandedLineChart.unit }}</th><th>{{ comparisonYesterdayLabel }}{{ expandedLineChart.unit }}</th><th>差值</th><th>增长</th></tr></thead>
               <tbody><tr v-for="point in expandedLineChart.chart.points" :key="`node-${point.hour}`"><td>{{ point.label }}</td><td>{{ formatLineValue(point.today, lineValueType(expandedLineChart)) }}</td><td>{{ formatLineValue(point.yesterday, lineValueType(expandedLineChart)) }}</td><td>{{ formatLineValue(point.today - point.yesterday, lineValueType(expandedLineChart)) }}</td><td :class="growthClass(point.today - point.yesterday)">{{ lineGrowth(point.today, point.yesterday) }}</td></tr></tbody>
             </table>
           </div>
@@ -765,7 +772,7 @@ onBeforeUnmount(() => {
 
       <section class="comparison-ranking-grid">
         <article class="panel ranking-panel">
-          <div class="panel-heading"><div><h3>店铺对比昨日排名</h3><p>按今日实收金额排序</p></div><Store :size="18" class="panel-icon" /></div>
+          <div class="panel-heading"><div><h3>店铺对比{{ comparisonYesterdayLabel }}排名</h3><p>按{{ comparisonTodayLabel }}实收金额排序</p></div><Store :size="18" class="panel-icon" /></div>
           <div class="ranking-list comparison-ranking-list">
             <div v-for="shop in shopComparisonRows" :key="`${shop.shop_id}-${shop.shop_name}`" :data-shop-name="shop.shop_name" :class="['ranking-row', 'comparison-ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.shopNames.includes(shop.shop_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('shop', shop.shop_name)" @keydown.enter.prevent="selectDashboardDimension('shop', shop.shop_name)" @keydown.space.prevent="selectDashboardDimension('shop', shop.shop_name)">
               <b>{{ shop.rank }}</b><div class="ranking-main"><strong :title="shop.shop_name">{{ shop.shop_name }}</strong><div class="bar-track"><i :style="{ width: barWidth(shop.today_amount, maxShopComparisonAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatMoney(shop.today_amount) }}</strong><span><em :class="growthClass(shop.amount_growth_pct)">{{ formatGrowth(shop.amount_growth_pct) }}</em></span></div>
@@ -773,7 +780,7 @@ onBeforeUnmount(() => {
           </div>
         </article>
         <article class="panel ranking-panel">
-          <div class="panel-heading"><div><h3>商品对比昨日排名</h3><p>按商品规格今日实收金额排序</p></div><Package :size="18" class="panel-icon" /></div>
+          <div class="panel-heading"><div><h3>商品对比{{ comparisonYesterdayLabel }}排名</h3><p>按商品规格{{ comparisonTodayLabel }}实收金额排序</p></div><Package :size="18" class="panel-icon" /></div>
           <div class="ranking-list comparison-ranking-list">
             <div v-for="product in productComparisonRows" :key="`${product.product_no}-${product.spec_name}`" :data-product-name="product.product_name" :class="['ranking-row', 'comparison-ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.productNames.includes(product.product_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('product', product.product_name)" @keydown.enter.prevent="selectDashboardDimension('product', product.product_name)" @keydown.space.prevent="selectDashboardDimension('product', product.product_name)">
               <b>{{ product.rank }}</b><div class="ranking-main"><strong :title="product.product_name">{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small><div class="bar-track"><i class="orange" :style="{ width: barWidth(product.today_amount, maxProductComparisonAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatMoney(product.today_amount) }}</strong><span>{{ formatUnits(product.today_units) }} 件 · <em :class="growthClass(product.amount_growth_pct)">{{ formatGrowth(product.amount_growth_pct) }}</em></span></div>
