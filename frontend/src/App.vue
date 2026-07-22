@@ -281,7 +281,7 @@ function connectOrderEvents() {
   orderEventSource.addEventListener('orders.updated', async (event) => {
     const payload = JSON.parse(event.data || '{}')
     lastSyncedAt.value = payload.synced_at || lastSyncedAt.value
-    await queryOrders({ silent: true })
+    await queryOrders({ silent: true, includeRows: false })
   })
   orderEventSource.addEventListener('orders.sync_failed', (event) => {
     sseStatus.value = 'error'
@@ -559,7 +559,7 @@ onMounted(async () => {
   loadFilters()
   connectOrderEvents()
   window.addEventListener('keydown', handleWindowKeydown)
-  await queryOrders({ silent: true })
+  await queryOrders({ silent: true, includeRows: false })
 })
 
 onBeforeUnmount(() => {
