@@ -145,19 +145,6 @@ input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgb
 .dimension-context { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; color: var(--muted); font-size: 10px; text-align: right; }
 .dimension-context strong { color: #31445e; font-size: 15px; font-variant-numeric: tabular-nums; }
 .dimension-context span { white-space: nowrap; }
-.dimension-section .kpi-grid,
-.dimension-section .comparison-summary,
-.dimension-section .tableau-grid,
-.dimension-section .comparison-ranking-grid,
-.dimension-section .analysis-grid { margin-bottom: 16px; }
-.dimension-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.product-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 820px; }
-.dimension-comparison-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.product-comparison-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 820px; }
-.dimension-owner-panel { margin-bottom: 16px; }
-.dimension-chart-section { margin-bottom: 16px; }
-.dimension-ranking-section { margin-bottom: 16px; }
-
 .kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
 .kpi-card { padding: 18px 18px 16px; border: 1px solid var(--line); border-top: 3px solid; border-radius: var(--radius); background: #ffffff; box-shadow: var(--shadow); }
 .kpi-card.accent-blue { border-top-color: var(--blue); }
@@ -186,6 +173,18 @@ input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgb
 .comparison-card em.neutral, .ranking-value em.neutral { color: #8996a6; }
 .comparison-context { border-top-color: #8b98a8; }
 .comparison-context strong { font-size: 20px; }
+.dimension-section .kpi-grid,
+.dimension-section .comparison-summary,
+.dimension-section .tableau-grid,
+.dimension-section .comparison-ranking-grid,
+.dimension-section .analysis-grid { margin-bottom: 16px; }
+.dimension-section .dimension-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dimension-section .product-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 820px; }
+.dimension-section .dimension-comparison-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dimension-section .product-comparison-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 820px; }
+.dimension-owner-panel { margin-bottom: 16px; }
+.dimension-chart-section { margin-bottom: 16px; }
+.dimension-ranking-section { margin-bottom: 16px; }
 .tableau-filter-strip { margin-bottom: 16px; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: #ffffff; box-shadow: var(--shadow); }
 .filter-strip-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
 .filter-strip-heading h3 { margin-top: 2px; color: var(--text); font-size: 16px; }
