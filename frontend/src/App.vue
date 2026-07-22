@@ -179,6 +179,28 @@ async function fetchJson(url, options) {
   return data
 }
 
+function buildDashboardRequestBody(dateWindow, includeRows = false) {
+  return {
+    start_time: toApiDateTime(dateWindow.startAt),
+    end_time: toApiDateTime(dateWindow.endAt, true),
+    platform_ids: filters.platformId === 'all' ? [] : [filters.platformId],
+    page_size: Number(filters.pageSize),
+    time_type: Number(filters.timeType),
+    include_rows: includeRows,
+    // 留空表示由后端依据 total_count 自动拉取完整分页。
+    max_pages: filters.maxPages ? Number(filters.maxPages) : null,
+    dashboard_filters: {
+      brand: dashboardFilters.brandKeyword.trim() ? [dashboardFilters.brandKeyword.trim()] : [],
+      sku_codes: dashboardFilters.skuCodes,
+      product_names: dashboardFilters.productNames,
+      shop_names: dashboardFilters.shopNames,
+      owner_names: dashboardFilters.ownerNames,
+      date_layers: dashboardFilters.dateLayers,
+      time_truncated: dashboardFilters.timeTruncated,
+    },
+  }
+}
+
 async function queryOrders({ silent = false, includeRows = true } = {}) {
   if (loading.value) return null
 
@@ -195,25 +217,7 @@ async function queryOrders({ silent = false, includeRows = true } = {}) {
     const data = await fetchJson(`${API_BASE_URL}/api/wdt/orders/dashboard`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        start_time: toApiDateTime(dateWindow.startAt),
-        end_time: toApiDateTime(dateWindow.endAt, true),
-        platform_ids: filters.platformId === 'all' ? [] : [filters.platformId],
-        page_size: Number(filters.pageSize),
-        time_type: Number(filters.timeType),
-        include_rows: includeRows,
-        // 留空表示由后端依据 total_count 自动拉取完整分页。
-        max_pages: filters.maxPages ? Number(filters.maxPages) : null,
-        dashboard_filters: {
-          brand: dashboardFilters.brandKeyword.trim() ? [dashboardFilters.brandKeyword.trim()] : [],
-          sku_codes: dashboardFilters.skuCodes,
-          product_names: dashboardFilters.productNames,
-          shop_names: dashboardFilters.shopNames,
-          owner_names: dashboardFilters.ownerNames,
-          date_layers: dashboardFilters.dateLayers,
-          time_truncated: dashboardFilters.timeTruncated,
-        },
-      }),
+      body: JSON.stringify(buildDashboardRequestBody(dateWindow, includeRows)),
     })
     result.value = data
     lastQueriedAt.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -222,7 +226,7 @@ async function queryOrders({ silent = false, includeRows = true } = {}) {
       successMessage.value = data.order_count
         ? `已从本地 MySQL 加载 ${formatNumber(data.order_count)} 笔订单，覆盖 ${data.source_window_count} 个日窗口。`
         : '读取完成，当前时间范围没有匹配订单。'
-      if (filters.exportAfterQuery && data.rows?.length) downloadCsv(data)
+      if (filters.exportAfterQuery && data.rows?.length) downloadCsv()
     }
     return data
   } catch (error) {
@@ -542,7 +546,7 @@ function shopShare(amount) {
   return summary.value.order_amount ? `${formatNumber((Number(amount || 0) / summary.value.order_amount) * 100, 1)}%` : '0%'
 }
 
-async function downloadCsv(data = result.value) {
+async function downloadCsv() {
   if (csvDownloading.value) return
   if (loading.value) {
     errorMessage.value = '订单数据正在更新，请稍后再下载 CSV。'
@@ -552,26 +556,25 @@ async function downloadCsv(data = result.value) {
   csvDownloading.value = true
   errorMessage.value = ''
   try {
-    if (data?.rows_complete === false) {
-      successMessage.value = '正在加载完整订单明细，请稍候…'
-      data = await queryOrders({ silent: true, includeRows: true }) || result.value
+    successMessage.value = '正在生成完整 CSV，请稍候…'
+    const dateWindow = recentDateWindow()
+    saveFilters()
+    const response = await fetch(`${API_BASE_URL}/api/wdt/orders/dashboard/csv`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildDashboardRequestBody(dateWindow)),
+    })
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      throw new Error(data.detail || `CSV 下载失败（${response.status}）`)
     }
-    if (!data?.columns?.length) throw new Error('当前没有可下载的订单明细。')
-    if (data.rows_complete === false) throw new Error('完整订单明细加载失败，请稍后重试。')
-
-    const escapeCsv = (value) => {
-      const text = value === null || value === undefined ? '' : String(value)
-      return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
-    }
-    const lines = [data.columns.map(escapeCsv).join(',')]
-    for (const row of data.rows || []) lines.push(data.columns.map((column) => escapeCsv(row[column])).join(','))
-    const blob = new Blob([`\ufeff${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' })
+    const blob = await response.blob()
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    const startDate = String(data.start_time || '').slice(0, 10)
-    const endDate = String(data.end_time || '').slice(0, 10)
-    link.download = `wdt_orders_${startDate}_${endDate}.csv`
+    const disposition = response.headers.get('Content-Disposition') || ''
+    const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `wdt_orders_${dateWindow.startAt.slice(0, 10)}_${dateWindow.endAt.slice(0, 10)}.csv`
+    link.download = filename
     link.style.display = 'none'
     document.body.appendChild(link)
     link.click()
@@ -579,7 +582,7 @@ async function downloadCsv(data = result.value) {
       link.remove()
       URL.revokeObjectURL(url)
     }, 1000)
-    successMessage.value = `CSV 已开始下载，共 ${formatNumber(data.row_count ?? data.rows.length)} 行。`
+    successMessage.value = 'CSV 已开始下载。'
   } catch (error) {
     errorMessage.value = error.message || 'CSV 下载失败，请稍后重试。'
   } finally {

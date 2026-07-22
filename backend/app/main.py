@@ -11,7 +11,7 @@ from typing import Any
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -23,7 +23,7 @@ from app.database import get_db
 from app.order_events import OrderEventBus
 from app.order_sync import latest_sync, read_order_analysis, sync_recent_orders
 from app.schemas import WdtOrderQueryRequest, WdtOrderQueryResponse
-from app.wdt_client import WdtApiError, WdtConfigError, query_orders
+from app.wdt_client import WdtApiError, WdtConfigError, query_orders, rows_to_csv
 
 
 class ProfitQueryRequest(BaseModel):
@@ -253,6 +253,40 @@ def read_wdt_dashboard(payload: WdtOrderQueryRequest, db=Depends(get_db)) -> dic
         raise HTTPException(status_code=503, detail="本地 MySQL 暂不可用，请检查 DATABASE_URL 和数据库账号。") from error
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"读取本地订单数据失败：{error}") from error
+
+
+@app.post("/api/wdt/orders/dashboard/csv")
+def download_wdt_dashboard_csv(payload: WdtOrderQueryRequest, db=Depends(get_db)) -> Response:
+    """直接由后端生成 CSV，避免前端解析包含完整看板数据的大 JSON。"""
+
+    if payload.start_time >= payload.end_time:
+        raise HTTPException(status_code=400, detail="开始时间必须早于结束时间")
+
+    try:
+        result = read_order_analysis(
+            db,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+            platform_ids=payload.platform_ids,
+            time_type=payload.time_type,
+            dashboard_filters=payload.dashboard_filters.model_dump(),
+            include_rows=True,
+        )
+        csv_text = rows_to_csv(result["columns"], result["rows"])
+        start_date = payload.start_time.date().isoformat()
+        end_date = payload.end_time.date().isoformat()
+        filename = f"wdt_orders_{start_date}_{end_date}.csv"
+        return Response(
+            content=f"\ufeff{csv_text}",
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except SQLAlchemyError as error:
+        logger.exception("生成订单 CSV 失败")
+        raise HTTPException(status_code=503, detail="本地 MySQL 暂不可用，请检查数据库服务。") from error
+    except Exception as error:
+        logger.exception("生成订单 CSV 失败")
+        raise HTTPException(status_code=500, detail=f"生成订单 CSV 失败：{error}") from error
 
 
 @app.get("/api/wdt/orders/events")
