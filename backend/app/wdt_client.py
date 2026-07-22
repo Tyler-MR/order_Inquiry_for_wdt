@@ -222,9 +222,9 @@ def _goods_units(goods: dict[str, Any]) -> float:
 
 
 def _goods_amount(goods: dict[str, Any]) -> float:
-    # 所有看板金额统一使用旺店通返回的商品行实付金额。
-    """Return only the goods.paid amount; missing values contribute zero."""
-    return _to_number(goods.get("paid"))
+    # 所有看板金额统一使用旺店通返回的商品行分摊金额。
+    """Return only the goods.share_amount amount; missing values contribute zero."""
+    return _to_number(goods.get("share_amount"))
 
 
 def _order_date(order: dict[str, Any], time_type: int) -> str:
