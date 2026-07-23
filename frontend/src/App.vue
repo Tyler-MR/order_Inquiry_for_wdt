@@ -31,6 +31,14 @@ const platformOptions = [
   { id: '127', name: '抖音' },
 ]
 
+const brandOptions = [
+  { value: '', label: '全部' },
+  { value: '浪奇', label: '浪奇' },
+  { value: '威王', label: '威王' },
+  { value: '舒蕾', label: '舒蕾' },
+  { value: '白牌', label: '白牌' },
+]
+
 const timeOptions = [
   { value: 4, label: '付款时间 pay_time' },
   { value: 5, label: '发货时间 consign_time' },
@@ -65,6 +73,7 @@ function defaultDashboardFilters() {
     shopNames: [],
     ownerNames: [],
     dateLayers: ['昨日', '今日'],
+    hours: [],
     timeTruncated: true,
   }
 }
@@ -81,6 +90,7 @@ const lastSyncedAt = ref('')
 const sseStatus = ref('connecting')
 const expandedLineChartId = ref('')
 const activeLinePointHour = ref(null)
+const tableauHover = ref(null)
 const dashboardFiltersDirty = ref(false)
 let orderEventSource = null
 
@@ -131,6 +141,7 @@ function buildDashboardRequestBody(dateWindow, includeRows = false) {
       shop_names: dashboardFilters.shopNames,
       owner_names: dashboardFilters.ownerNames,
       date_layers: dashboardFilters.dateLayers,
+      hours: dashboardFilters.hours,
       time_truncated: dashboardFilters.timeTruncated,
     },
   }
@@ -178,7 +189,9 @@ function filterList(value) {
 function selectedFilterLabel(values, allLabel = '(全部)') {
   const selected = filterList(values)
   if (!selected.length) return allLabel
+  if (selected.length === dateLayerOptions.length && selected.every((value) => dateLayerOptions.includes(value))) return '全部'
   if (selected.length === 1) return selected[0]
+  if (selected.length <= 3) return selected.join('、')
   return `${selected.length} 项已选`
 }
 
@@ -194,6 +207,36 @@ function applyDashboardFilters() {
 function clearDashboardFilters() {
   Object.assign(dashboardFilters, defaultDashboardFilters())
   applyDashboardFilters()
+}
+
+function selectDashboardHour(hour) {
+  const nextHour = Number(hour)
+  if (!Number.isFinite(nextHour)) return
+  dashboardFilters.hours = dashboardFilters.hours.length === 1 && dashboardFilters.hours[0] === nextHour ? [] : [nextHour]
+  dashboardFiltersDirty.value = false
+  queryOrders({ includeRows: false })
+}
+
+function showTableauPoint(chart, series, point, valueType) {
+  tableauHover.value = {
+    chartId: chart.id,
+    seriesLabel: series.label || series.date,
+    point,
+    valueType,
+  }
+}
+
+function clearTableauPoint() {
+  tableauHover.value = null
+}
+
+function selectTableauPoint(chart, series, point, valueType) {
+  const layer = dateLayerOptions.includes(series.label) ? series.label : ''
+  if (layer) dashboardFilters.dateLayers = [layer]
+  dashboardFilters.hours = [Number(point.hour)]
+  dashboardFiltersDirty.value = false
+  showTableauPoint(chart, series, point, valueType)
+  queryOrders({ includeRows: false })
 }
 
 function selectDashboardDimension(dimension, value) {
@@ -330,7 +373,7 @@ function buildHourlySeriesChart(seriesRows, valueField, valueType) {
   const padX = 30
   const padTop = 16
   const padBottom = 28
-  const palette = ['#1769e0', '#94a3b8', '#f59e0b', '#8b5cf6', '#10b981']
+  const palette = ['#4e79a7', '#edc949', '#8b949e', '#8b5cf6', '#10b981']
   const dashPatterns = ['', '6 4', '2 4', '9 4 2 4', '3 3']
   const normalizedSeries = (Array.isArray(seriesRows) ? seriesRows : []).map((series, seriesIndex) => ({
     key: series.date || `series-${seriesIndex}`,
@@ -474,6 +517,7 @@ const activeDashboardFilterCount = computed(() => [
   ...dashboardFilters.shopNames,
   ...dashboardFilters.ownerNames,
   ...dashboardFilters.dateLayers,
+  ...dashboardFilters.hours.map((hour) => `hour-${hour}`),
   dashboardFilters.timeTruncated === false ? 'time_untruncated' : '',
 ].filter(Boolean).length)
 const maxShopComparisonAmount = computed(() => Math.max(...shopComparisonRows.value.map((item) => Number(item.today_amount || 0)), 1))
@@ -487,7 +531,9 @@ function shortDate(value) {
 }
 
 function seriesIndexColor(series) {
-  return series?.key === comparisonMeta.value.today ? '#4e79a7' : '#edc949'
+  if (series?.key === comparisonMeta.value.today || series?.label === '今日') return '#4e79a7'
+  if (series?.key === comparisonMeta.value.yesterday || series?.label === '昨日') return '#edc949'
+  return '#8b949e'
 }
 
 const tableauDateTotal = computed(() => ({
@@ -612,11 +658,11 @@ onBeforeUnmount(() => {
         <section class="tableau-filter-bar">
           <label class="tableau-filter-field"><span>平台</span><select v-model="dashboardFilters.platformId" @change="markDashboardFiltersDirty"><option v-for="option in platformOptions" :key="option.id" :value="option.id">{{ option.name }}</option></select></label>
           <label class="tableau-filter-field"><span>时间字段</span><select v-model="dashboardFilters.timeType" @change="markDashboardFiltersDirty"><option v-for="option in timeOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
-          <label class="tableau-filter-field"><span>品牌</span><input v-model="dashboardFilters.brandKeyword" type="search" placeholder="(全部)" @change="markDashboardFiltersDirty" @keyup.enter="markDashboardFiltersDirty" /></label>
+          <label class="tableau-filter-field"><span>品牌</span><select v-model="dashboardFilters.brandKeyword" @change="markDashboardFiltersDirty"><option v-for="option in brandOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
           <label v-if="activeDashboardTab === 'product'" class="tableau-filter-field"><span>SKU编码</span><details class="filter-dropdown"><summary>{{ selectedFilterLabel(dashboardFilters.skuCodes) }} <b>⌄</b></summary><div class="filter-menu"><label class="filter-option"><input type="checkbox" :checked="!dashboardFilters.skuCodes.length" @change="dashboardFilters.skuCodes = []; markDashboardFiltersDirty()" /> (全部)</label><label v-for="sku in filterOptions.sku_codes" :key="sku" class="filter-option"><input v-model="dashboardFilters.skuCodes" type="checkbox" :value="sku" @change="markDashboardFiltersDirty" /> {{ sku }}</label></div></details></label>
           <label v-if="activeDashboardTab === 'product'" class="tableau-filter-field"><span>商品名称1</span><details class="filter-dropdown"><summary>{{ selectedFilterLabel(dashboardFilters.productNames) }} <b>⌄</b></summary><div class="filter-menu"><label class="filter-option"><input type="checkbox" :checked="!dashboardFilters.productNames.length" @change="dashboardFilters.productNames = []; markDashboardFiltersDirty()" /> (全部)</label><label v-for="product in filterOptions.product_names" :key="product" class="filter-option"><input v-model="dashboardFilters.productNames" type="checkbox" :value="product" @change="markDashboardFiltersDirty" /> {{ product }}</label></div></details></label>
           <label class="tableau-filter-field"><span>时间截断</span><select v-model="dashboardFilters.timeTruncated" @change="markDashboardFiltersDirty"><option :value="true">真</option><option :value="false">假</option></select></label>
-          <label class="tableau-filter-field"><span>日期层级</span><details class="filter-dropdown"><summary>{{ selectedFilterLabel(dashboardFilters.dateLayers, '(多个值)') }} <b>⌄</b></summary><div class="filter-menu"><label class="filter-option"><input type="checkbox" :checked="!dashboardFilters.dateLayers.length" @change="dashboardFilters.dateLayers = []; markDashboardFiltersDirty()" /> (全部)</label><label v-for="layer in dateLayerOptions" :key="layer" class="filter-option"><input v-model="dashboardFilters.dateLayers" type="checkbox" :value="layer" @change="markDashboardFiltersDirty" /> {{ layer }}</label></div></details></label>
+          <label class="tableau-filter-field"><span>日期层级</span><details class="filter-dropdown"><summary>{{ selectedFilterLabel(dashboardFilters.dateLayers, '全部') }} <b>⌄</b></summary><div class="filter-menu"><label class="filter-option"><input type="checkbox" :checked="!dashboardFilters.dateLayers.length" @change="dashboardFilters.dateLayers = []; markDashboardFiltersDirty()" /> (全部)</label><label v-for="layer in dateLayerOptions" :key="layer" class="filter-option"><input v-model="dashboardFilters.dateLayers" type="checkbox" :value="layer" @change="markDashboardFiltersDirty" /> {{ layer }}</label></div></details></label>
           <div class="tableau-filter-actions"><span v-if="tableauFilterCount">已启用 {{ tableauFilterCount }} 项</span><button type="button" class="tableau-query-button" :disabled="loading" @click="applyDashboardFilters"><Loader2 v-if="loading" class="spin" :size="13" /><Search v-else :size="13" />查询</button><button type="button" class="tableau-reset-button" @click="clearDashboardFilters">重置</button></div>
         </section>
 
@@ -662,9 +708,10 @@ onBeforeUnmount(() => {
                 <div class="tableau-axis-labels"><span>{{ tableauPrimaryChart.chart.maxLabel }}</span><span>{{ tableauPrimaryChart.chart.midLabel }}</span><span>0</span></div>
                 <svg :viewBox="`0 0 ${tableauPrimaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日波动">
                   <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
-                  <template v-for="series in tableauPrimaryChart.chart.series" :key="`sales-primary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="2.5" :fill="seriesIndexColor(series)" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
+                  <template v-for="series in tableauPrimaryChart.chart.series" :key="`sales-primary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauPrimaryChart, series, point, 'amount')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauPrimaryChart, series, point, 'amount')" @click="selectTableauPoint(tableauPrimaryChart, series, point, 'amount')" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
                 </svg>
                 <div class="tableau-x-axis"><span v-for="tick in tableauPrimaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
+                <div v-if="tableauHover && tableauHover.chartId === tableauPrimaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauPrimaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
               </div>
             </article>
           </div>
@@ -675,9 +722,10 @@ onBeforeUnmount(() => {
               <div class="tableau-axis-labels"><span>{{ tableauSecondaryChart.chart.maxLabel }}</span><span>{{ tableauSecondaryChart.chart.midLabel }}</span><span>0</span></div>
               <svg :viewBox="`0 0 ${tableauSecondaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日增长">
                 <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
-                <template v-for="series in tableauSecondaryChart.chart.series" :key="`sales-secondary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="2.5" :fill="seriesIndexColor(series)" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
+                <template v-for="series in tableauSecondaryChart.chart.series" :key="`sales-secondary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauSecondaryChart, series, point, 'amount')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauSecondaryChart, series, point, 'amount')" @click="selectTableauPoint(tableauSecondaryChart, series, point, 'amount')" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
               </svg>
               <div class="tableau-x-axis"><span v-for="tick in tableauSecondaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
+              <div v-if="tableauHover && tableauHover.chartId === tableauSecondaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauSecondaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
             </div>
           </article>
         </section>
@@ -699,9 +747,10 @@ onBeforeUnmount(() => {
                 <div class="tableau-axis-labels"><span>{{ tableauPrimaryChart.chart.maxLabel }}</span><span>{{ tableauPrimaryChart.chart.midLabel }}</span><span>0</span></div>
                 <svg :viewBox="`0 0 ${tableauPrimaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日波动(商品数量)">
                   <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
-                  <template v-for="series in tableauPrimaryChart.chart.series" :key="`product-primary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="2.5" :fill="seriesIndexColor(series)" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'units') }}</text></template></template>
+                  <template v-for="series in tableauPrimaryChart.chart.series" :key="`product-primary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauPrimaryChart, series, point, 'units')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauPrimaryChart, series, point, 'units')" @click="selectTableauPoint(tableauPrimaryChart, series, point, 'units')" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'units') }}</text></template></template>
                 </svg>
                 <div class="tableau-x-axis"><span v-for="tick in tableauPrimaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
+                <div v-if="tableauHover && tableauHover.chartId === tableauPrimaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauPrimaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
               </div>
             </article>
           </div>
@@ -711,9 +760,10 @@ onBeforeUnmount(() => {
               <div class="tableau-axis-labels"><span>{{ tableauSecondaryChart.chart.maxLabel }}</span><span>{{ tableauSecondaryChart.chart.midLabel }}</span><span>0</span></div>
               <svg :viewBox="`0 0 ${tableauSecondaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日增长(商品数量)">
                 <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
-                <template v-for="series in tableauSecondaryChart.chart.series" :key="`product-secondary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="2.5" :fill="seriesIndexColor(series)" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'units') }}</text></template></template>
+                <template v-for="series in tableauSecondaryChart.chart.series" :key="`product-secondary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauSecondaryChart, series, point, 'units')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauSecondaryChart, series, point, 'units')" @click="selectTableauPoint(tableauSecondaryChart, series, point, 'units')" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'units') }}</text></template></template>
               </svg>
               <div class="tableau-x-axis"><span v-for="tick in tableauSecondaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
+              <div v-if="tableauHover && tableauHover.chartId === tableauSecondaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauSecondaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
             </div>
           </article>
         </section>

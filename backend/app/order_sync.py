@@ -258,6 +258,20 @@ def _clean_filter_values(values: Any) -> set[str]:
     return {str(value).strip() for value in values if str(value).strip()}
 
 
+def _clean_filter_hours(values: Any) -> set[int]:
+    if not isinstance(values, list):
+        return set()
+    cleaned: set[int] = set()
+    for value in values:
+        try:
+            hour = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= hour <= 23:
+            cleaned.add(hour)
+    return cleaned
+
+
 def _first_text(item: dict[str, Any], keys: tuple[str, ...]) -> str:
     for key in keys:
         value = item.get(key)
@@ -286,7 +300,14 @@ def _goods_product_name(goods: dict[str, Any]) -> str:
 
 
 def _goods_brand(goods: dict[str, Any]) -> str:
-    return _first_text(goods, ("brand", "brand_name", "goods_brand", "product_brand"))
+    explicit = _first_text(goods, ("brand", "brand_name", "goods_brand", "product_brand"))
+    if explicit:
+        return explicit
+    product_name = _goods_product_name(goods)
+    for known_brand in ("浪奇", "威王", "舒蕾"):
+        if known_brand in product_name:
+            return known_brand
+    return "白牌" if product_name else ""
 
 
 def _order_shop_name(order: dict[str, Any]) -> str:
@@ -372,12 +393,13 @@ def _apply_dashboard_filters(
     shop_names = _clean_filter_values(filters.get("shop_names"))
     owner_names = _clean_filter_values(filters.get("owner_names"))
     date_layers = _clean_filter_values(filters.get("date_layers"))
+    hours = _clean_filter_hours(filters.get("hours"))
     time_truncated = bool(filters.get("time_truncated", True))
     local_now = datetime.now(LOCAL_TZ)
     current_hour = local_now.hour
     owner_map = _load_shop_owner_map() if owner_names else {}
     product_master = _load_product_master_map() if brands or sku_codes or product_names else {}
-    if not any((brands, sku_codes, product_names, shop_names, owner_names, date_layers)) and not time_truncated:
+    if not any((brands, sku_codes, product_names, shop_names, owner_names, date_layers, hours)) and not time_truncated:
         return orders
 
     filtered: list[dict[str, Any]] = []
@@ -391,6 +413,8 @@ def _apply_dashboard_filters(
         ):
             continue
         if date_layers and _date_layer(event_at) not in date_layers:
+            continue
+        if hours and (event_at is None or event_at.hour not in hours):
             continue
         if shop_names and _order_shop_name(order) not in shop_names:
             continue

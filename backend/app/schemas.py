@@ -72,6 +72,7 @@ class WdtDashboardFilters(BaseModel):
     shop_names: list[str] = Field(default_factory=list)
     owner_names: list[str] = Field(default_factory=list)
     date_layers: list[str] = Field(default_factory=list)
+    hours: list[int] = Field(default_factory=list)
     time_truncated: bool = True
 
 
