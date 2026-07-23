@@ -428,7 +428,7 @@ tbody tr:hover td { background: #f8fbff; }
 .tableau-axis-labels { position: absolute; top: 10px; bottom: 31px; left: 0; display: flex; flex-direction: column; justify-content: space-between; color: #777e83; font-size: 9px; }
 .tableau-grid-line { stroke: #e5e7e8; stroke-width: 1; }
 .tableau-comparison-line { fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-.tableau-point-label { fill: #4d555a; font-size: 9px; }
+.tableau-point-label { fill: #4d555a; font-size: 9px; paint-order: stroke; stroke: #ffffff; stroke-width: 3px; stroke-linejoin: round; }
 .tableau-x-axis { display: grid; grid-template-columns: repeat(18, minmax(0, 1fr)); height: 22px; color: #777e83; font-size: 9px; text-align: center; }
 .tableau-point-hit { cursor: pointer; outline: none; }
 .tableau-point-hit:focus { stroke: #1d4f7a; stroke-width: 2; }

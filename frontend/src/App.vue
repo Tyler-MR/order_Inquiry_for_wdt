@@ -530,6 +530,19 @@ function shortDate(value) {
   return match ? `${Number(match[2])}.${String(match[3]).padStart(2, '0')}` : String(value)
 }
 
+function tableauPointLabelPosition(series, point) {
+  const offsets = {
+    '#4e79a7': { x: -3, y: -11 },
+    '#edc949': { x: 3, y: 17 },
+    '#8b949e': { x: 0, y: -27 },
+  }
+  const offset = offsets[seriesIndexColor(series)] || { x: 0, y: -11 }
+  return {
+    x: point.x + offset.x,
+    y: Math.min(242, Math.max(14, point.y + offset.y)),
+  }
+}
+
 function seriesIndexColor(series) {
   if (series?.key === comparisonMeta.value.today || series?.label === '今日') return '#4e79a7'
   if (series?.key === comparisonMeta.value.yesterday || series?.label === '昨日') return '#edc949'
@@ -708,7 +721,7 @@ onBeforeUnmount(() => {
                 <div class="tableau-axis-labels"><span>{{ tableauPrimaryChart.chart.maxLabel }}</span><span>{{ tableauPrimaryChart.chart.midLabel }}</span><span>0</span></div>
                 <svg :viewBox="`0 0 ${tableauPrimaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日波动">
                   <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
-                  <template v-for="series in tableauPrimaryChart.chart.series" :key="`sales-primary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauPrimaryChart, series, point, 'amount')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauPrimaryChart, series, point, 'amount')" @pointerdown="selectTableauPoint(tableauPrimaryChart, series, point, 'amount')" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
+                  <template v-for="series in tableauPrimaryChart.chart.series" :key="`sales-primary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauPrimaryChart, series, point, 'amount')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauPrimaryChart, series, point, 'amount')" @pointerdown="selectTableauPoint(tableauPrimaryChart, series, point, 'amount')" /><text :x="tableauPointLabelPosition(series, point).x" :y="tableauPointLabelPosition(series, point).y" class="tableau-point-label" :style="{ fill: seriesIndexColor(series) }" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
                 </svg>
                 <div class="tableau-x-axis"><span v-for="tick in tableauPrimaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
                 <div v-if="tableauHover && tableauHover.chartId === tableauPrimaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauPrimaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
@@ -720,7 +733,7 @@ onBeforeUnmount(() => {
               <div class="tableau-axis-labels"><span>{{ tableauSecondaryChart.chart.maxLabel }}</span><span>{{ tableauSecondaryChart.chart.midLabel }}</span><span>0</span></div>
               <svg :viewBox="`0 0 ${tableauSecondaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日增长">
                 <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
-                <template v-for="series in tableauSecondaryChart.chart.series" :key="`sales-secondary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauSecondaryChart, series, point, 'amount')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauSecondaryChart, series, point, 'amount')" @pointerdown="selectTableauPoint(tableauSecondaryChart, series, point, 'amount')" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
+                <template v-for="series in tableauSecondaryChart.chart.series" :key="`sales-secondary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauSecondaryChart, series, point, 'amount')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauSecondaryChart, series, point, 'amount')" @pointerdown="selectTableauPoint(tableauSecondaryChart, series, point, 'amount')" /><text :x="tableauPointLabelPosition(series, point).x" :y="tableauPointLabelPosition(series, point).y" class="tableau-point-label" :style="{ fill: seriesIndexColor(series) }" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
               </svg>
               <div class="tableau-x-axis"><span v-for="tick in tableauSecondaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
               <div v-if="tableauHover && tableauHover.chartId === tableauSecondaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauSecondaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
