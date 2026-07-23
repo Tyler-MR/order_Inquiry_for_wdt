@@ -677,7 +677,7 @@ onBeforeUnmount(() => {
             </article>
 
             <article class="tableau-sheet">
-              <div class="tableau-sheet-heading"><h2>店铺对比昨日排名</h2><span>按今日实收金额排序</span></div>
+              <div class="tableau-sheet-heading"><h2>店铺对比{{ comparisonYesterdayLabel }}排名</h2><span>按{{ comparisonTodayLabel }}实收金额排序</span></div>
               <table class="tableau-data-table">
                 <thead><tr><th>店铺</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
                 <tbody><tr v-for="shop in tableauShopRows" :key="`${shop.shop_id}-${shop.shop_name}`" @click="selectDashboardDimension('shop', shop.shop_name)"><td>{{ shop.shop_name }}</td><td>{{ formatMoney(shop.yesterday_amount) }}</td><td>{{ formatMoney(shop.today_amount) }}</td><td :class="growthClass(shop.amount_growth_pct)">{{ formatGrowth(shop.amount_growth_pct) }}</td></tr></tbody>
@@ -685,7 +685,7 @@ onBeforeUnmount(() => {
             </article>
 
             <article class="tableau-sheet">
-              <div class="tableau-sheet-heading"><h2>负责人对比昨日排名</h2><span>按今日实收金额排序</span></div>
+              <div class="tableau-sheet-heading"><h2>负责人对比{{ comparisonYesterdayLabel }}排名</h2><span>按{{ comparisonTodayLabel }}实收金额排序</span></div>
               <table class="tableau-data-table">
                 <thead><tr><th>负责人</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
                 <tbody><tr v-for="owner in tableauOwnerRows" :key="owner.owner_name" @click="selectDashboardDimension('owner', owner.owner_name)"><td>{{ owner.owner_name }}</td><td>{{ formatMoney(owner.yesterday_amount) }}</td><td>{{ formatMoney(owner.today_amount) }}</td><td :class="growthClass(owner.amount_growth_pct)">{{ formatGrowth(owner.amount_growth_pct) }}</td></tr></tbody>
@@ -693,7 +693,7 @@ onBeforeUnmount(() => {
             </article>
 
             <article class="tableau-sheet">
-              <div class="tableau-sheet-heading"><h2>商品对比昨日排名</h2><span>按商品编码今日实收金额排序</span></div>
+              <div class="tableau-sheet-heading"><h2>商品对比{{ comparisonYesterdayLabel }}排名</h2><span>按商品编码{{ comparisonTodayLabel }}实收金额排序</span></div>
               <table class="tableau-data-table">
                 <thead><tr><th>商品名称1 / Sku编码</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
                 <tbody><tr v-for="product in tableauSalesProductRows" :key="product.product_no || product.product_name" @click="selectDashboardDimension('product', product.product_name)"><td><strong>{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small></td><td>{{ formatMoney(product.yesterday_amount) }}</td><td>{{ formatMoney(product.today_amount) }}</td><td :class="growthClass(product.amount_growth_pct)">{{ formatGrowth(product.amount_growth_pct) }}</td></tr></tbody>
@@ -703,7 +703,7 @@ onBeforeUnmount(() => {
 
           <div class="tableau-column tableau-column-right">
             <article class="tableau-chart-sheet">
-              <div class="tableau-sheet-heading"><h2>24小时对比昨日波动</h2><span>付款时间 · {{ comparisonCutoffLabel }}</span></div>
+              <div class="tableau-sheet-heading"><h2>24小时对比{{ comparisonYesterdayLabel }}波动</h2><span>付款时间 · {{ comparisonCutoffLabel }}</span></div>
               <div v-if="tableauPrimaryChart" class="tableau-chart-frame">
                 <div class="tableau-axis-labels"><span>{{ tableauPrimaryChart.chart.maxLabel }}</span><span>{{ tableauPrimaryChart.chart.midLabel }}</span><span>0</span></div>
                 <svg :viewBox="`0 0 ${tableauPrimaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日波动">
@@ -715,7 +715,7 @@ onBeforeUnmount(() => {
               </div>
             </article>
             <article class="tableau-chart-sheet tableau-chart-sheet-wide">
-            <div class="tableau-sheet-heading"><h2>24小时对比昨日增长</h2><span>累计实收金额 · {{ comparisonCutoffLabel }}</span></div>
+            <div class="tableau-sheet-heading"><h2>24小时对比{{ comparisonYesterdayLabel }}增长</h2><span>累计实收金额 · {{ comparisonCutoffLabel }}</span></div>
             <div v-if="tableauSecondaryChart" class="tableau-chart-frame wide-chart-frame">
               <div class="tableau-axis-labels"><span>{{ tableauSecondaryChart.chart.maxLabel }}</span><span>{{ tableauSecondaryChart.chart.midLabel }}</span><span>0</span></div>
               <svg :viewBox="`0 0 ${tableauSecondaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日增长">
@@ -732,7 +732,7 @@ onBeforeUnmount(() => {
         <section v-else class="tableau-canvas product-canvas">
           <div class="tableau-column tableau-column-left">
             <article class="tableau-sheet product-table-sheet">
-              <div class="tableau-sheet-heading"><h2>商品对比昨日排名(商品数量)</h2><span>按编码数据对商品名称1降序排序</span></div>
+              <div class="tableau-sheet-heading"><h2>商品对比{{ comparisonYesterdayLabel }}排名(商品数量)</h2><span>按编码数据对商品名称1降序排序</span></div>
               <table class="tableau-data-table">
                 <thead><tr><th>商品名称1 / Sku编码</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
                 <tbody><tr v-for="product in tableauProductRows" :key="product.product_no || product.product_name" @click="selectDashboardDimension('product', product.product_name)"><td><strong>{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small></td><td>{{ formatUnits(product.yesterday_units) }}</td><td>{{ formatUnits(product.today_units) }}</td><td :class="growthClass(product.units_growth_pct)">{{ formatGrowth(product.units_growth_pct) }}</td></tr></tbody>
@@ -741,7 +741,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="tableau-column tableau-column-right">
             <article class="tableau-chart-sheet">
-              <div class="tableau-sheet-heading"><h2>24小时对比昨日波动(商品数量)</h2><span>付款时间 · 产品规格</span></div>
+              <div class="tableau-sheet-heading"><h2>24小时对比{{ comparisonYesterdayLabel }}波动(商品数量)</h2><span>付款时间 · 产品编码</span></div>
               <div v-if="tableauPrimaryChart" class="tableau-chart-frame">
                 <div class="tableau-axis-labels"><span>{{ tableauPrimaryChart.chart.maxLabel }}</span><span>{{ tableauPrimaryChart.chart.midLabel }}</span><span>0</span></div>
                 <svg :viewBox="`0 0 ${tableauPrimaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日波动(商品数量)">
@@ -753,7 +753,7 @@ onBeforeUnmount(() => {
               </div>
             </article>
             <article class="tableau-chart-sheet tableau-chart-sheet-wide">
-            <div class="tableau-sheet-heading"><h2>24小时对比昨日增长(商品数量)</h2><span>累计产品规格 · {{ comparisonCutoffLabel }}</span></div>
+            <div class="tableau-sheet-heading"><h2>24小时对比{{ comparisonYesterdayLabel }}增长(商品数量)</h2><span>累计产品编码 · {{ comparisonCutoffLabel }}</span></div>
             <div v-if="tableauSecondaryChart" class="tableau-chart-frame wide-chart-frame">
               <div class="tableau-axis-labels"><span>{{ tableauSecondaryChart.chart.maxLabel }}</span><span>{{ tableauSecondaryChart.chart.midLabel }}</span><span>0</span></div>
               <svg :viewBox="`0 0 ${tableauSecondaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日增长(商品数量)">

@@ -327,15 +327,15 @@ def _date_layer(event_at: datetime | None) -> str:
     return ""
 
 
-def _dashboard_comparison_date(
+def _dashboard_comparison_dates(
     *,
     fallback: date,
     filters: dict[str, Any] | None,
-) -> date:
-    """Return the latest explicitly selected date as the comparison base date."""
+) -> tuple[date, date | None]:
+    """Return the selected comparison dates, newest first."""
     date_layers = set(_clean_filter_values((filters or {}).get("date_layers")))
     if not date_layers:
-        return fallback
+        return fallback, fallback - timedelta(days=1)
 
     today = datetime.now(LOCAL_TZ).date()
     layer_offsets = {"今日": 0, "昨日": 1, "前天": 2}
@@ -344,7 +344,19 @@ def _dashboard_comparison_date(
         for layer, offset in layer_offsets.items()
         if layer in date_layers
     ]
-    return max(selected_dates, default=fallback)
+    selected_dates.sort(reverse=True)
+    if not selected_dates:
+        return fallback, fallback - timedelta(days=1)
+    return selected_dates[0], selected_dates[1] if len(selected_dates) > 1 else None
+
+
+def _dashboard_comparison_date(
+    *,
+    fallback: date,
+    filters: dict[str, Any] | None,
+) -> date:
+    """Return the latest explicitly selected date as the comparison base date."""
+    return _dashboard_comparison_dates(fallback=fallback, filters=filters)[0]
 
 
 def _filter_options(orders: list[dict[str, Any]]) -> dict[str, Any]:
@@ -473,7 +485,7 @@ def read_order_analysis(
         time_type=time_type,
         filters=dashboard_filters,
     )
-    comparison_date = _dashboard_comparison_date(
+    comparison_date, comparison_previous_date = _dashboard_comparison_dates(
         fallback=end_time.date(),
         filters=dashboard_filters,
     )
@@ -485,6 +497,7 @@ def read_order_analysis(
         platform_ids=selected_platforms,
         time_type=time_type,
         comparison_date=comparison_date,
+        comparison_previous_date=comparison_previous_date,
         time_truncated=time_truncated,
         include_rows=include_rows,
     )
