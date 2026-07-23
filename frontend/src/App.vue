@@ -714,9 +714,7 @@ onBeforeUnmount(() => {
                 <div v-if="tableauHover && tableauHover.chartId === tableauPrimaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauPrimaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
               </div>
             </article>
-          </div>
-
-          <article class="tableau-chart-sheet tableau-chart-sheet-wide">
+            <article class="tableau-chart-sheet tableau-chart-sheet-wide">
             <div class="tableau-sheet-heading"><h2>24小时对比昨日增长</h2><span>累计实收金额 · {{ comparisonCutoffLabel }}</span></div>
             <div v-if="tableauSecondaryChart" class="tableau-chart-frame wide-chart-frame">
               <div class="tableau-axis-labels"><span>{{ tableauSecondaryChart.chart.maxLabel }}</span><span>{{ tableauSecondaryChart.chart.midLabel }}</span><span>0</span></div>
@@ -727,7 +725,8 @@ onBeforeUnmount(() => {
               <div class="tableau-x-axis"><span v-for="tick in tableauSecondaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
               <div v-if="tableauHover && tableauHover.chartId === tableauSecondaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauSecondaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
             </div>
-          </article>
+            </article>
+          </div>
         </section>
 
         <section v-else class="tableau-canvas product-canvas">
@@ -753,8 +752,7 @@ onBeforeUnmount(() => {
                 <div v-if="tableauHover && tableauHover.chartId === tableauPrimaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauPrimaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
               </div>
             </article>
-          </div>
-          <article class="tableau-chart-sheet tableau-chart-sheet-wide">
+            <article class="tableau-chart-sheet tableau-chart-sheet-wide">
             <div class="tableau-sheet-heading"><h2>24小时对比昨日增长(商品数量)</h2><span>累计产品规格 · {{ comparisonCutoffLabel }}</span></div>
             <div v-if="tableauSecondaryChart" class="tableau-chart-frame wide-chart-frame">
               <div class="tableau-axis-labels"><span>{{ tableauSecondaryChart.chart.maxLabel }}</span><span>{{ tableauSecondaryChart.chart.midLabel }}</span><span>0</span></div>
@@ -765,7 +763,8 @@ onBeforeUnmount(() => {
               <div class="tableau-x-axis"><span v-for="tick in tableauSecondaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
               <div v-if="tableauHover && tableauHover.chartId === tableauSecondaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauSecondaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
             </div>
-          </article>
+            </article>
+          </div>
         </section>
       </section>
 
