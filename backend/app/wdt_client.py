@@ -571,13 +571,13 @@ def build_analysis(
             line_amount = _goods_amount(goods)
             order_units += units
             product_no, product_name, spec_name = _product_info(goods, product_master)
-            product_key = f"{product_no}|{product_name}|{spec_name}"
+            product_key = product_no or product_name
             product = products.setdefault(
                 product_key,
                 {
                     "product_no": product_no,
                     "product_name": product_name,
-                    "spec_name": spec_name,
+                    "spec_name": "",
                     "order_count": 0,
                     "units": 0.0,
                     "order_amount": 0.0,
@@ -598,7 +598,7 @@ def build_analysis(
                     _new_comparison_entry(
                         product_no=product_no,
                         product_name=product_name,
-                        spec_name=spec_name,
+                        spec_name="",
                     ),
                 )
                 _add_comparison_value(
