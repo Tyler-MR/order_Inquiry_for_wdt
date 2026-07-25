@@ -10,6 +10,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
@@ -85,33 +86,51 @@ def _order_key(order: dict[str, Any]) -> str:
 
 
 def _upsert_orders(db: Session, orders: list[dict[str, Any]], synced_at: datetime) -> int:
-    keyed_orders = [(key, order) for order in orders if (key := _order_key(order))]
-    keys = [key for key, _ in keyed_orders]
-    existing = {}
-    if keys:
-        existing = {
-            item.order_key: item
-            for item in db.scalars(select(WdtOrder).where(WdtOrder.order_key.in_(keys))).all()
+    keyed_orders = {key: order for order in orders if (key := _order_key(order))}
+    if not keyed_orders:
+        return 0
+
+    values = [
+        {
+            "order_key": key,
+            "platform_id": str(order.get("platform_id") or ""),
+            "trade_no": str(order.get("trade_no") or ""),
+            "shop_name": normalize_shop_name(order.get("shop_name") or order.get("fenxiao_shop_name") or ""),
+            "modified_at": _parse_wdt_datetime(order.get("modified")),
+            "trade_at": _parse_wdt_datetime(order.get("trade_time")),
+            "order_created_at": _parse_wdt_datetime(order.get("created")),
+            "pay_at": _parse_wdt_datetime(order.get("pay_time")),
+            "consign_at": _parse_wdt_datetime(order.get("consign_time")),
+            "payload_json": json.dumps(order, ensure_ascii=False, default=str),
+            "synced_at": synced_at,
         }
+        for key, order in keyed_orders.items()
+    ]
 
-    for key, order in keyed_orders:
-        item = existing.get(key)
-        if item is None:
-            item = WdtOrder(order_key=key, payload_json="{}")
-            db.add(item)
+    # Use MySQL's native upsert instead of ORM batch UPDATE. The latter can
+    # raise StaleDataError when a repeated sync updates rows whose values are
+    # unchanged, even though the order_key matched correctly.
+    for offset in range(0, len(values), 500):
+        batch = values[offset:offset + 500]
+        statement = mysql_insert(WdtOrder).values(batch)
+        update_columns = {
+            column: getattr(statement.inserted, column)
+            for column in (
+                "platform_id",
+                "trade_no",
+                "shop_name",
+                "modified_at",
+                "trade_at",
+                "order_created_at",
+                "pay_at",
+                "consign_at",
+                "payload_json",
+                "synced_at",
+            )
+        }
+        db.execute(statement.on_duplicate_key_update(**update_columns))
 
-        item.platform_id = str(order.get("platform_id") or "")
-        item.trade_no = str(order.get("trade_no") or "")
-        item.shop_name = normalize_shop_name(order.get("shop_name") or order.get("fenxiao_shop_name") or "")
-        item.modified_at = _parse_wdt_datetime(order.get("modified"))
-        item.trade_at = _parse_wdt_datetime(order.get("trade_time"))
-        item.order_created_at = _parse_wdt_datetime(order.get("created"))
-        item.pay_at = _parse_wdt_datetime(order.get("pay_time"))
-        item.consign_at = _parse_wdt_datetime(order.get("consign_time"))
-        item.payload_json = json.dumps(order, ensure_ascii=False, default=str)
-        item.synced_at = synced_at
-
-    return len(keyed_orders)
+    return len(values)
 
 
 def _cleanup_expired_orders(db: Session, cutoff: datetime, time_type: int) -> int:
