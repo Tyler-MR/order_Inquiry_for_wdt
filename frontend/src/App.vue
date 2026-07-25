@@ -91,6 +91,7 @@ const sseStatus = ref('connecting')
 const expandedLineChartId = ref('')
 const activeLinePointHour = ref(null)
 const tableauHover = ref(null)
+const tableauSelectedNode = ref(null)
 const dashboardFiltersDirty = ref(false)
 let orderEventSource = null
 
@@ -230,27 +231,28 @@ function clearTableauPoint() {
   tableauHover.value = null
 }
 
-function selectTableauPoint(chart, series, point, valueType) {
-  const layer = dateLayerOptions.includes(series.label) ? series.label : ''
-  if (layer) dashboardFilters.dateLayers = [layer]
-  dashboardFilters.hours = [Number(point.hour)]
-  dashboardFiltersDirty.value = false
-  showTableauPoint(chart, series, point, valueType)
-  queryOrders({ includeRows: false })
+function tableauNodeValuesAtHour(chart, point, valueType) {
+  return (chart?.chart?.series || []).map((entry) => {
+    const matchingPoint = (entry.points || []).find((candidate) => Number(candidate.hour) === Number(point.hour))
+    return {
+      key: entry.key || entry.label || entry.date,
+      label: entry.label || entry.date || entry.key,
+      value: matchingPoint?.value ?? 0,
+      color: seriesIndexColor(entry),
+      valueType,
+    }
+  })
 }
 
-function selectDashboardDimension(dimension, value) {
-  const filterKey = {
-    shop: 'shopNames',
-    product: 'productNames',
-    owner: 'ownerNames',
-  }[dimension]
-  if (!filterKey || !value) return
-
-  const selected = dashboardFilters[filterKey]
-  dashboardFilters[filterKey] = selected.length === 1 && selected[0] === value ? [] : [value]
-  dashboardFiltersDirty.value = false
-  queryOrders({ includeRows: false })
+function selectTableauPoint(chart, series, point, valueType) {
+  tableauSelectedNode.value = {
+    chartId: chart.id,
+    point,
+    valueType,
+    unit: chart.unit,
+    values: tableauNodeValuesAtHour(chart, point, valueType),
+  }
+  showTableauPoint(chart, series, point, valueType)
 }
 
 function connectOrderEvents() {
@@ -693,7 +695,7 @@ onBeforeUnmount(() => {
               <div class="tableau-sheet-heading"><h2>店铺对比{{ comparisonYesterdayLabel }}排名</h2><span>按{{ comparisonTodayLabel }}实收金额排序</span></div>
               <table class="tableau-data-table">
                 <thead><tr><th>店铺</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
-                <tbody><tr v-for="shop in tableauShopRows" :key="`${shop.shop_id}-${shop.shop_name}`" @click="selectDashboardDimension('shop', shop.shop_name)"><td>{{ shop.shop_name }}</td><td>{{ formatMoney(shop.yesterday_amount) }}</td><td>{{ formatMoney(shop.today_amount) }}</td><td :class="growthClass(shop.amount_growth_pct)">{{ formatGrowth(shop.amount_growth_pct) }}</td></tr></tbody>
+                <tbody><tr v-for="shop in tableauShopRows" :key="`${shop.shop_id}-${shop.shop_name}`"><td>{{ shop.shop_name }}</td><td>{{ formatMoney(shop.yesterday_amount) }}</td><td>{{ formatMoney(shop.today_amount) }}</td><td :class="growthClass(shop.amount_growth_pct)">{{ formatGrowth(shop.amount_growth_pct) }}</td></tr></tbody>
               </table>
             </article>
 
@@ -701,7 +703,7 @@ onBeforeUnmount(() => {
               <div class="tableau-sheet-heading"><h2>负责人对比{{ comparisonYesterdayLabel }}排名</h2><span>按{{ comparisonTodayLabel }}实收金额排序</span></div>
               <table class="tableau-data-table">
                 <thead><tr><th>负责人</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
-                <tbody><tr v-for="owner in tableauOwnerRows" :key="owner.owner_name" @click="selectDashboardDimension('owner', owner.owner_name)"><td>{{ owner.owner_name }}</td><td>{{ formatMoney(owner.yesterday_amount) }}</td><td>{{ formatMoney(owner.today_amount) }}</td><td :class="growthClass(owner.amount_growth_pct)">{{ formatGrowth(owner.amount_growth_pct) }}</td></tr></tbody>
+                <tbody><tr v-for="owner in tableauOwnerRows" :key="owner.owner_name"><td>{{ owner.owner_name }}</td><td>{{ formatMoney(owner.yesterday_amount) }}</td><td>{{ formatMoney(owner.today_amount) }}</td><td :class="growthClass(owner.amount_growth_pct)">{{ formatGrowth(owner.amount_growth_pct) }}</td></tr></tbody>
               </table>
             </article>
 
@@ -709,7 +711,7 @@ onBeforeUnmount(() => {
               <div class="tableau-sheet-heading"><h2>商品对比{{ comparisonYesterdayLabel }}排名</h2><span>按商品编码{{ comparisonTodayLabel }}实收金额排序</span></div>
               <table class="tableau-data-table">
                 <thead><tr><th>商品名称1 / Sku编码</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
-                <tbody><tr v-for="product in tableauSalesProductRows" :key="product.product_no || product.product_name" @click="selectDashboardDimension('product', product.product_name)"><td><strong>{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small></td><td>{{ formatMoney(product.yesterday_amount) }}</td><td>{{ formatMoney(product.today_amount) }}</td><td :class="growthClass(product.amount_growth_pct)">{{ formatGrowth(product.amount_growth_pct) }}</td></tr></tbody>
+                <tbody><tr v-for="product in tableauSalesProductRows" :key="product.product_no || product.product_name"><td><strong>{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small></td><td>{{ formatMoney(product.yesterday_amount) }}</td><td>{{ formatMoney(product.today_amount) }}</td><td :class="growthClass(product.amount_growth_pct)">{{ formatGrowth(product.amount_growth_pct) }}</td></tr></tbody>
               </table>
             </article>
           </div>
@@ -724,7 +726,8 @@ onBeforeUnmount(() => {
                   <template v-for="series in tableauPrimaryChart.chart.series" :key="`sales-primary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauPrimaryChart, series, point, 'amount')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauPrimaryChart, series, point, 'amount')" @pointerdown="selectTableauPoint(tableauPrimaryChart, series, point, 'amount')" /><text :x="tableauPointLabelPosition(series, point).x" :y="tableauPointLabelPosition(series, point).y" class="tableau-point-label" :style="{ fill: seriesIndexColor(series) }" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
                 </svg>
                 <div class="tableau-x-axis"><span v-for="tick in tableauPrimaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
-                <div v-if="tableauHover && tableauHover.chartId === tableauPrimaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauPrimaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
+                <div v-if="tableauSelectedNode && tableauSelectedNode.chartId === tableauPrimaryChart.id" class="tableau-hover-card tableau-node-detail"><strong>{{ tableauSelectedNode.point.label }} · 所有日期</strong><span v-for="entry in tableauSelectedNode.values" :key="entry.key" :style="{ color: entry.color }">{{ entry.label }}：{{ formatLineValue(entry.value, entry.valueType) }}{{ tableauSelectedNode.unit }}</span><small>点击其他节点更新</small></div>
+                <div v-else-if="tableauHover && tableauHover.chartId === tableauPrimaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauPrimaryChart.unit }}</span><small>点击节点可查看该时间点的所有日期数据</small></div>
               </div>
             </article>
             <article class="tableau-chart-sheet tableau-chart-sheet-wide">
@@ -736,7 +739,8 @@ onBeforeUnmount(() => {
                 <template v-for="series in tableauSecondaryChart.chart.series" :key="`sales-secondary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauSecondaryChart, series, point, 'amount')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauSecondaryChart, series, point, 'amount')" @pointerdown="selectTableauPoint(tableauSecondaryChart, series, point, 'amount')" /><text :x="tableauPointLabelPosition(series, point).x" :y="tableauPointLabelPosition(series, point).y" class="tableau-point-label" :style="{ fill: seriesIndexColor(series) }" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
               </svg>
               <div class="tableau-x-axis"><span v-for="tick in tableauSecondaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
-              <div v-if="tableauHover && tableauHover.chartId === tableauSecondaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauSecondaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
+              <div v-if="tableauSelectedNode && tableauSelectedNode.chartId === tableauSecondaryChart.id" class="tableau-hover-card tableau-node-detail"><strong>{{ tableauSelectedNode.point.label }} · 所有日期</strong><span v-for="entry in tableauSelectedNode.values" :key="entry.key" :style="{ color: entry.color }">{{ entry.label }}：{{ formatLineValue(entry.value, entry.valueType) }}{{ tableauSelectedNode.unit }}</span><small>点击其他节点更新</small></div>
+              <div v-else-if="tableauHover && tableauHover.chartId === tableauSecondaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauSecondaryChart.unit }}</span><small>点击节点可查看该时间点的所有日期数据</small></div>
             </div>
             </article>
           </div>
@@ -748,7 +752,7 @@ onBeforeUnmount(() => {
               <div class="tableau-sheet-heading"><h2>商品对比{{ comparisonYesterdayLabel }}排名(商品数量)</h2><span>按编码数据对商品名称1降序排序</span></div>
               <table class="tableau-data-table">
                 <thead><tr><th>商品名称1 / Sku编码</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
-                <tbody><tr v-for="product in tableauProductRows" :key="product.product_no || product.product_name" @click="selectDashboardDimension('product', product.product_name)"><td><strong>{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small></td><td>{{ formatUnits(product.yesterday_units) }}</td><td>{{ formatUnits(product.today_units) }}</td><td :class="growthClass(product.units_growth_pct)">{{ formatGrowth(product.units_growth_pct) }}</td></tr></tbody>
+                <tbody><tr v-for="product in tableauProductRows" :key="product.product_no || product.product_name"><td><strong>{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small></td><td>{{ formatUnits(product.yesterday_units) }}</td><td>{{ formatUnits(product.today_units) }}</td><td :class="growthClass(product.units_growth_pct)">{{ formatGrowth(product.units_growth_pct) }}</td></tr></tbody>
               </table>
             </article>
           </div>
@@ -762,7 +766,8 @@ onBeforeUnmount(() => {
                   <template v-for="series in tableauPrimaryChart.chart.series" :key="`product-primary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauPrimaryChart, series, point, 'units')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauPrimaryChart, series, point, 'units')" @pointerdown="selectTableauPoint(tableauPrimaryChart, series, point, 'units')" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'units') }}</text></template></template>
                 </svg>
                 <div class="tableau-x-axis"><span v-for="tick in tableauPrimaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
-                <div v-if="tableauHover && tableauHover.chartId === tableauPrimaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauPrimaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
+                <div v-if="tableauSelectedNode && tableauSelectedNode.chartId === tableauPrimaryChart.id" class="tableau-hover-card tableau-node-detail"><strong>{{ tableauSelectedNode.point.label }} · 所有日期</strong><span v-for="entry in tableauSelectedNode.values" :key="entry.key" :style="{ color: entry.color }">{{ entry.label }}：{{ formatLineValue(entry.value, entry.valueType) }}{{ tableauSelectedNode.unit }}</span><small>点击其他节点更新</small></div>
+                <div v-else-if="tableauHover && tableauHover.chartId === tableauPrimaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauPrimaryChart.unit }}</span><small>点击节点可查看该时间点的所有日期数据</small></div>
               </div>
             </article>
             <article class="tableau-chart-sheet tableau-chart-sheet-wide">
@@ -774,7 +779,8 @@ onBeforeUnmount(() => {
                 <template v-for="series in tableauSecondaryChart.chart.series" :key="`product-secondary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauSecondaryChart, series, point, 'units')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauSecondaryChart, series, point, 'units')" @pointerdown="selectTableauPoint(tableauSecondaryChart, series, point, 'units')" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'units') }}</text></template></template>
               </svg>
               <div class="tableau-x-axis"><span v-for="tick in tableauSecondaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
-              <div v-if="tableauHover && tableauHover.chartId === tableauSecondaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauSecondaryChart.unit }}</span><small>点击此节点可联动筛选</small></div>
+              <div v-if="tableauSelectedNode && tableauSelectedNode.chartId === tableauSecondaryChart.id" class="tableau-hover-card tableau-node-detail"><strong>{{ tableauSelectedNode.point.label }} · 所有日期</strong><span v-for="entry in tableauSelectedNode.values" :key="entry.key" :style="{ color: entry.color }">{{ entry.label }}：{{ formatLineValue(entry.value, entry.valueType) }}{{ tableauSelectedNode.unit }}</span><small>点击其他节点更新</small></div>
+              <div v-else-if="tableauHover && tableauHover.chartId === tableauSecondaryChart.id" class="tableau-hover-card"><strong>{{ tableauHover.seriesLabel }}</strong><span>{{ tableauHover.point.label }} · {{ formatLineValue(tableauHover.point.value, tableauHover.valueType) }}{{ tableauSecondaryChart.unit }}</span><small>点击节点可查看该时间点的所有日期数据</small></div>
             </div>
             </article>
           </div>
@@ -827,7 +833,7 @@ onBeforeUnmount(() => {
         <article class="panel ranking-panel owner-panel">
           <div class="panel-heading"><div><h3>负责人对比{{ comparisonYesterdayLabel }}</h3><p>按店铺负责人汇总{{ comparisonTodayLabel }}实收</p></div><Store :size="18" class="panel-icon" /></div>
           <div v-if="visibleOwnerComparisonRows.length" class="owner-bar-chart">
-            <div v-for="owner in visibleOwnerComparisonRows" :key="owner.owner_name" :data-owner-name="owner.owner_name" :class="['owner-bar-item', 'is-clickable', { 'is-selected': dashboardFilters.ownerNames.includes(owner.owner_name) }]" role="button" tabindex="0" :title="`${owner.owner_name}：${formatMoney(owner.today_amount)}，${formatGrowth(owner.amount_growth_pct)}`" @click="selectDashboardDimension('owner', owner.owner_name)" @keydown.enter.prevent="selectDashboardDimension('owner', owner.owner_name)" @keydown.space.prevent="selectDashboardDimension('owner', owner.owner_name)">
+            <div v-for="owner in visibleOwnerComparisonRows" :key="owner.owner_name" :data-owner-name="owner.owner_name" class="owner-bar-item" :title="`${owner.owner_name}：${formatMoney(owner.today_amount)}，${formatGrowth(owner.amount_growth_pct)}`">
               <strong class="owner-bar-value">{{ formatMoney(owner.today_amount) }}</strong>
               <div class="owner-bar-stage"><i :style="{ height: barHeight(owner.today_amount, maxOwnerComparisonAmount) }"></i></div>
               <b class="owner-bar-rank">{{ owner.rank }}</b>
@@ -910,7 +916,7 @@ onBeforeUnmount(() => {
         <article class="panel ranking-panel">
           <div class="panel-heading"><div><h3>店铺对比{{ comparisonYesterdayLabel }}排名</h3><p>按{{ comparisonTodayLabel }}实收金额排序</p></div><Store :size="18" class="panel-icon" /></div>
           <div class="ranking-list comparison-ranking-list">
-            <div v-for="shop in shopComparisonRows" :key="`${shop.shop_id}-${shop.shop_name}`" :data-shop-name="shop.shop_name" :class="['ranking-row', 'comparison-ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.shopNames.includes(shop.shop_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('shop', shop.shop_name)" @keydown.enter.prevent="selectDashboardDimension('shop', shop.shop_name)" @keydown.space.prevent="selectDashboardDimension('shop', shop.shop_name)">
+            <div v-for="shop in shopComparisonRows" :key="`${shop.shop_id}-${shop.shop_name}`" :data-shop-name="shop.shop_name" class="ranking-row comparison-ranking-row">
               <b>{{ shop.rank }}</b><div class="ranking-main"><strong :title="shop.shop_name">{{ shop.shop_name }}</strong><div class="bar-track"><i :style="{ width: barWidth(shop.today_amount, maxShopComparisonAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatMoney(shop.today_amount) }}</strong><span><em :class="growthClass(shop.amount_growth_pct)">{{ formatGrowth(shop.amount_growth_pct) }}</em></span></div>
             </div>
           </div>
@@ -918,7 +924,7 @@ onBeforeUnmount(() => {
         <article class="panel ranking-panel">
           <div class="panel-heading"><div><h3>商品对比{{ comparisonYesterdayLabel }}排名</h3><p>按商品编码{{ comparisonTodayLabel }}实收金额排序</p></div><Package :size="18" class="panel-icon" /></div>
           <div class="ranking-list comparison-ranking-list">
-            <div v-for="product in productComparisonRows" :key="`${product.product_no}-${product.spec_name}`" :data-product-name="product.product_name" :class="['ranking-row', 'comparison-ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.productNames.includes(product.product_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('product', product.product_name)" @keydown.enter.prevent="selectDashboardDimension('product', product.product_name)" @keydown.space.prevent="selectDashboardDimension('product', product.product_name)">
+            <div v-for="product in productComparisonRows" :key="`${product.product_no}-${product.spec_name}`" :data-product-name="product.product_name" class="ranking-row comparison-ranking-row">
               <b>{{ product.rank }}</b><div class="ranking-main"><strong :title="product.product_name">{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small><div class="bar-track"><i class="orange" :style="{ width: barWidth(product.today_amount, maxProductComparisonAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatMoney(product.today_amount) }}</strong><span>{{ formatUnits(product.today_units) }} 件 · <em :class="growthClass(product.amount_growth_pct)">{{ formatGrowth(product.amount_growth_pct) }}</em></span></div>
             </div>
           </div>
@@ -929,7 +935,7 @@ onBeforeUnmount(() => {
         <article class="panel ranking-panel">
           <div class="panel-heading"><div><h3>店铺排行</h3><p>按成交金额排序</p></div><Store :size="18" class="panel-icon" /></div>
           <div class="ranking-list">
-            <div v-for="(shop, index) in result.shops" :key="`${shop.shop_id}-${shop.shop_name}`" :data-shop-name="shop.shop_name" :class="['ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.shopNames.includes(shop.shop_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('shop', shop.shop_name)" @keydown.enter.prevent="selectDashboardDimension('shop', shop.shop_name)" @keydown.space.prevent="selectDashboardDimension('shop', shop.shop_name)">
+            <div v-for="(shop, index) in result.shops" :key="`${shop.shop_id}-${shop.shop_name}`" :data-shop-name="shop.shop_name" class="ranking-row">
               <b>{{ index + 1 }}</b><div class="ranking-main"><strong :title="shop.shop_name">{{ shop.shop_name }}</strong><div class="bar-track"><i :style="{ width: barWidth(shop.order_amount, maxShopAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatMoney(shop.order_amount) }}</strong><span>{{ formatNumber(shop.order_count) }} 单 · {{ shopShare(shop.order_amount) }}</span></div>
             </div>
             <div v-if="!result.shops.length" class="mini-empty">暂无店铺数据</div>
@@ -939,7 +945,7 @@ onBeforeUnmount(() => {
         <article class="panel ranking-panel">
           <div class="panel-heading"><div><h3>商品排行</h3><p>按商品行金额排序</p></div><Package :size="18" class="panel-icon" /></div>
           <div class="ranking-list">
-            <div v-for="(product, index) in result.products" :key="`${product.product_no}-${product.spec_name}`" :data-product-name="product.product_name" :class="['ranking-row', 'is-clickable', { 'is-selected': dashboardFilters.productNames.includes(product.product_name) }]" role="button" tabindex="0" @click="selectDashboardDimension('product', product.product_name)" @keydown.enter.prevent="selectDashboardDimension('product', product.product_name)" @keydown.space.prevent="selectDashboardDimension('product', product.product_name)">
+            <div v-for="(product, index) in result.products" :key="`${product.product_no}-${product.spec_name}`" :data-product-name="product.product_name" class="ranking-row">
               <b>{{ index + 1 }}</b><div class="ranking-main"><strong :title="product.product_name">{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small><div class="bar-track"><i class="orange" :style="{ width: barWidth(product.order_amount, maxProductAmount) }"></i></div></div><div class="ranking-value"><strong>{{ formatUnits(product.units) }} 件</strong><span>{{ formatMoney(product.order_amount) }}</span></div>
             </div>
             <div v-if="!result.products.length" class="mini-empty">暂无商品数据</div>
