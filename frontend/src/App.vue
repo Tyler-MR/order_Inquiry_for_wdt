@@ -91,6 +91,7 @@ const sseStatus = ref('connecting')
 const expandedLineChartId = ref('')
 const activeLinePointHour = ref(null)
 const tableauHover = ref(null)
+const tableauAxisHover = ref(null)
 const tableauSelectedNode = ref(null)
 const dashboardFiltersDirty = ref(false)
 let orderEventSource = null
@@ -231,6 +232,11 @@ function clearTableauPoint() {
   tableauHover.value = null
 }
 
+function clearTableauAxisHover() {
+  tableauAxisHover.value = null
+  tableauHover.value = null
+}
+
 function tableauNodeValuesAtHour(chart, point, valueType) {
   return (chart?.chart?.series || []).map((entry) => {
     const matchingPoint = (entry.points || []).find((candidate) => Number(candidate.hour) === Number(point.hour))
@@ -242,6 +248,44 @@ function tableauNodeValuesAtHour(chart, point, valueType) {
       valueType,
     }
   })
+}
+
+function showTableauAxisHover(chart, event, valueType) {
+  if (!chart?.chart || !event?.currentTarget) return
+  const svg = event.currentTarget instanceof SVGElement
+    ? event.currentTarget
+    : event.currentTarget.querySelector('svg')
+  if (!svg) return
+  const bounds = svg.getBoundingClientRect()
+  if (!bounds.width || event.clientY < bounds.top || event.clientY > bounds.bottom) {
+    clearTableauAxisHover()
+    return
+  }
+
+  const viewBoxWidth = Number(svg.viewBox?.baseVal?.width) || Number(chart.chart.width) || bounds.width
+  const pointerX = ((event.clientX - bounds.left) / bounds.width) * viewBoxWidth
+  const referencePoints = chart.chart.series?.[0]?.points || []
+  const nearestPoint = referencePoints.reduce((closest, point) => {
+    if (!closest) return point
+    return Math.abs(point.x - pointerX) < Math.abs(closest.x - pointerX) ? point : closest
+  }, null)
+  if (!nearestPoint) return
+
+  tableauAxisHover.value = {
+    chartId: chart.id,
+    x: nearestPoint.x,
+    point: nearestPoint,
+    valueType,
+    unit: chart.unit,
+    values: tableauNodeValuesAtHour(chart, nearestPoint, valueType),
+  }
+  tableauHover.value = null
+}
+
+function tableauTooltipFor(chart) {
+  if (tableauAxisHover.value?.chartId === chart?.id) return tableauAxisHover.value
+  if (tableauSelectedNode.value?.chartId === chart?.id) return tableauSelectedNode.value
+  return null
 }
 
 function selectTableauPoint(chart, series, point, valueType) {
@@ -719,10 +763,12 @@ onBeforeUnmount(() => {
           <div class="tableau-column tableau-column-right">
             <article class="tableau-chart-sheet">
               <div class="tableau-sheet-heading"><h2>24小时对比{{ comparisonYesterdayLabel }}波动</h2><span>付款时间 · {{ comparisonCutoffLabel }}</span></div>
-              <div v-if="tableauPrimaryChart" class="tableau-chart-frame">
+              <div v-if="tableauPrimaryChart" class="tableau-chart-frame sales-axis-chart-frame" @mousemove="showTableauAxisHover(tableauPrimaryChart, $event, activeDashboardTab === 'sales' ? 'amount' : 'units')" @mouseleave="clearTableauAxisHover">
+                <div v-if="tableauAxisHover && tableauAxisHover.chartId === tableauPrimaryChart.id" class="tableau-hover-card tableau-node-detail tableau-axis-tooltip"><strong>{{ tableauAxisHover.point.label }} · 所有日期</strong><span v-for="entry in tableauAxisHover.values" :key="entry.key" :style="{ color: entry.color }">{{ entry.label }}：{{ formatLineValue(entry.value, entry.valueType) }}{{ tableauAxisHover.unit }}</span><small>移动鼠标吸附到最近时间</small></div>
                 <div class="tableau-axis-labels"><span>{{ tableauPrimaryChart.chart.maxLabel }}</span><span>{{ tableauPrimaryChart.chart.midLabel }}</span><span>0</span></div>
                 <svg :viewBox="`0 0 ${tableauPrimaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日波动">
                   <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
+                  <line v-if="tableauAxisHover && tableauAxisHover.chartId === tableauPrimaryChart.id" :x1="tableauAxisHover.x" y1="8" :x2="tableauAxisHover.x" y2="242" class="tableau-axis-pointer" />
                   <template v-for="series in tableauPrimaryChart.chart.series" :key="`sales-primary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauPrimaryChart, series, point, 'amount')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauPrimaryChart, series, point, 'amount')" @click="selectTableauPoint(tableauPrimaryChart, series, point, 'amount')" /><text :x="tableauPointLabelPosition(series, point).x" :y="tableauPointLabelPosition(series, point).y" class="tableau-point-label" :style="{ fill: seriesIndexColor(series) }" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
                 </svg>
                 <div class="tableau-x-axis"><span v-for="tick in tableauPrimaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
@@ -732,10 +778,12 @@ onBeforeUnmount(() => {
             </article>
             <article class="tableau-chart-sheet tableau-chart-sheet-wide">
             <div class="tableau-sheet-heading"><h2>24小时对比{{ comparisonYesterdayLabel }}增长</h2><span>累计实收金额 · {{ comparisonCutoffLabel }}</span></div>
-            <div v-if="tableauSecondaryChart" class="tableau-chart-frame wide-chart-frame">
+            <div v-if="tableauSecondaryChart" class="tableau-chart-frame wide-chart-frame sales-axis-chart-frame" @mousemove="showTableauAxisHover(tableauSecondaryChart, $event, activeDashboardTab === 'sales' ? 'amount' : 'units')" @mouseleave="clearTableauAxisHover">
+              <div v-if="tableauAxisHover && tableauAxisHover.chartId === tableauSecondaryChart.id" class="tableau-hover-card tableau-node-detail tableau-axis-tooltip"><strong>{{ tableauAxisHover.point.label }} · 所有日期</strong><span v-for="entry in tableauAxisHover.values" :key="entry.key" :style="{ color: entry.color }">{{ entry.label }}：{{ formatLineValue(entry.value, entry.valueType) }}{{ tableauAxisHover.unit }}</span><small>移动鼠标吸附到最近时间</small></div>
               <div class="tableau-axis-labels"><span>{{ tableauSecondaryChart.chart.maxLabel }}</span><span>{{ tableauSecondaryChart.chart.midLabel }}</span><span>0</span></div>
               <svg :viewBox="`0 0 ${tableauSecondaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日增长">
                 <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
+                <line v-if="tableauAxisHover && tableauAxisHover.chartId === tableauSecondaryChart.id" :x1="tableauAxisHover.x" y1="8" :x2="tableauAxisHover.x" y2="242" class="tableau-axis-pointer" />
                 <template v-for="series in tableauSecondaryChart.chart.series" :key="`sales-secondary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauSecondaryChart, series, point, 'amount')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauSecondaryChart, series, point, 'amount')" @click="selectTableauPoint(tableauSecondaryChart, series, point, 'amount')" /><text :x="tableauPointLabelPosition(series, point).x" :y="tableauPointLabelPosition(series, point).y" class="tableau-point-label" :style="{ fill: seriesIndexColor(series) }" text-anchor="middle">{{ formatLineValue(point.value, 'amount') }}</text></template></template>
               </svg>
               <div class="tableau-x-axis"><span v-for="tick in tableauSecondaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
@@ -759,10 +807,12 @@ onBeforeUnmount(() => {
           <div class="tableau-column tableau-column-right">
             <article class="tableau-chart-sheet">
               <div class="tableau-sheet-heading"><h2>24小时对比{{ comparisonYesterdayLabel }}波动(商品数量)</h2><span>付款时间 · 产品编码</span></div>
-              <div v-if="tableauPrimaryChart" class="tableau-chart-frame">
+              <div v-if="tableauPrimaryChart" class="tableau-chart-frame product-axis-chart-frame" @mousemove="showTableauAxisHover(tableauPrimaryChart, $event, activeDashboardTab === 'sales' ? 'amount' : 'units')" @mouseleave="clearTableauAxisHover">
+                <div v-if="tableauAxisHover && tableauAxisHover.chartId === tableauPrimaryChart.id" class="tableau-hover-card tableau-node-detail tableau-axis-tooltip"><strong>{{ tableauAxisHover.point.label }} · 所有日期</strong><span v-for="entry in tableauAxisHover.values" :key="entry.key" :style="{ color: entry.color }">{{ entry.label }}：{{ formatLineValue(entry.value, entry.valueType) }}{{ tableauAxisHover.unit }}</span><small>移动鼠标吸附到最近时间</small></div>
                 <div class="tableau-axis-labels"><span>{{ tableauPrimaryChart.chart.maxLabel }}</span><span>{{ tableauPrimaryChart.chart.midLabel }}</span><span>0</span></div>
                 <svg :viewBox="`0 0 ${tableauPrimaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日波动(商品数量)">
                   <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
+                  <line v-if="tableauAxisHover && tableauAxisHover.chartId === tableauPrimaryChart.id" :x1="tableauAxisHover.x" y1="8" :x2="tableauAxisHover.x" y2="242" class="tableau-axis-pointer" />
                   <template v-for="series in tableauPrimaryChart.chart.series" :key="`product-primary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauPrimaryChart, series, point, 'units')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauPrimaryChart, series, point, 'units')" @click="selectTableauPoint(tableauPrimaryChart, series, point, 'units')" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'units') }}</text></template></template>
                 </svg>
                 <div class="tableau-x-axis"><span v-for="tick in tableauPrimaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
@@ -772,10 +822,12 @@ onBeforeUnmount(() => {
             </article>
             <article class="tableau-chart-sheet tableau-chart-sheet-wide">
             <div class="tableau-sheet-heading"><h2>24小时对比{{ comparisonYesterdayLabel }}增长(商品数量)</h2><span>累计产品编码 · {{ comparisonCutoffLabel }}</span></div>
-            <div v-if="tableauSecondaryChart" class="tableau-chart-frame wide-chart-frame">
+            <div v-if="tableauSecondaryChart" class="tableau-chart-frame wide-chart-frame product-axis-chart-frame" @mousemove="showTableauAxisHover(tableauSecondaryChart, $event, activeDashboardTab === 'sales' ? 'amount' : 'units')" @mouseleave="clearTableauAxisHover">
+              <div v-if="tableauAxisHover && tableauAxisHover.chartId === tableauSecondaryChart.id" class="tableau-hover-card tableau-node-detail tableau-axis-tooltip"><strong>{{ tableauAxisHover.point.label }} · 所有日期</strong><span v-for="entry in tableauAxisHover.values" :key="entry.key" :style="{ color: entry.color }">{{ entry.label }}：{{ formatLineValue(entry.value, entry.valueType) }}{{ tableauAxisHover.unit }}</span><small>移动鼠标吸附到最近时间</small></div>
               <div class="tableau-axis-labels"><span>{{ tableauSecondaryChart.chart.maxLabel }}</span><span>{{ tableauSecondaryChart.chart.midLabel }}</span><span>0</span></div>
               <svg :viewBox="`0 0 ${tableauSecondaryChart.chart.width} 270`" preserveAspectRatio="none" role="img" aria-label="24小时对比昨日增长(商品数量)">
                 <line v-for="grid in [0, 1, 2, 3]" :key="grid" x1="30" :y1="22 + grid * 72" x2="730" :y2="22 + grid * 72" class="tableau-grid-line" />
+                <line v-if="tableauAxisHover && tableauAxisHover.chartId === tableauSecondaryChart.id" :x1="tableauAxisHover.x" y1="8" :x2="tableauAxisHover.x" y2="242" class="tableau-axis-pointer" />
                 <template v-for="series in tableauSecondaryChart.chart.series" :key="`product-secondary-${series.key}`"><polyline :points="series.points.map((point) => `${point.x},${point.y + 8}`).join(' ')" class="tableau-comparison-line" :style="{ stroke: seriesIndexColor(series) }" /><template v-for="point in series.points" :key="`${series.key}-${point.hour}`"><circle :cx="point.x" :cy="point.y + 8" r="3" class="tableau-point-hit" :fill="seriesIndexColor(series)" tabindex="0" role="button" @mouseenter="showTableauPoint(tableauSecondaryChart, series, point, 'units')" @mouseleave="clearTableauPoint" @focus="showTableauPoint(tableauSecondaryChart, series, point, 'units')" @click="selectTableauPoint(tableauSecondaryChart, series, point, 'units')" /><text :x="point.x" :y="Math.max(14, point.y - 1)" class="tableau-point-label" text-anchor="middle">{{ formatLineValue(point.value, 'units') }}</text></template></template>
               </svg>
               <div class="tableau-x-axis"><span v-for="tick in tableauSecondaryChart.chart.xLabels" :key="tick.hour">{{ tick.label }}</span></div>
