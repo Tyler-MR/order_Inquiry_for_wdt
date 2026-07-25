@@ -2,6 +2,7 @@ import os
 from collections.abc import Generator
 
 from dotenv import load_dotenv
+from pymysql.constants import CLIENT
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -17,6 +18,11 @@ engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
     pool_recycle=3600,
+    # MySQL otherwise reports only rows whose values changed. SQLAlchemy's
+    # ORM flush expects the number of rows matched by a batch update, so
+    # unchanged orders could incorrectly raise StaleDataError and roll back
+    # the whole synchronization transaction.
+    connect_args={"client_flag": CLIENT.FOUND_ROWS},
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
