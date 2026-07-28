@@ -402,6 +402,9 @@ def _finalize_comparison_entry(entry: dict[str, Any]) -> dict[str, Any]:
     item = dict(entry)
     today_keys = item.pop("today_order_keys")
     yesterday_keys = item.pop("yesterday_order_keys")
+    sku_codes = item.pop("sku_codes", None)
+    if sku_codes:
+        item["sku_code"] = " / ".join(sorted(sku_codes))
     item["today_order_count"] = len(today_keys)
     item["yesterday_order_count"] = len(yesterday_keys)
     item["amount_delta"] = item["today_amount"] - item["yesterday_amount"]
@@ -422,12 +425,26 @@ def _shop_info(order: dict[str, Any]) -> tuple[str, str]:
 def _product_lookup_codes(goods: dict[str, Any]) -> list[str]:
     codes: list[str] = []
     seen: set[str] = set()
-    for field in ("sku_code", "sku_no", "spec_no", "api_spec_no", "goods_no", "api_goods_no"):
+    # 商品基础表按平台规格编码优先匹配，避免本地 spec_no 抢先命中另一套编码。
+    for field in ("api_spec_no", "sku_code", "sku_no", "spec_no", "goods_no", "api_goods_no"):
         value = str(goods.get(field) or "").strip()
         if value and value not in seen:
             seen.add(value)
             codes.append(value)
     return codes
+
+
+def _api_sku_code(goods: dict[str, Any]) -> str:
+    """Return the displayed SKU strictly from the WDT platform spec code."""
+
+    return str(goods.get("api_spec_no") or "").strip()
+
+
+def _api_goods_code(goods: dict[str, Any]) -> str:
+    """Return the platform product code used by amount analysis."""
+
+    value = str(goods.get("api_goods_no") or "").strip()
+    return value.split("-", 1)[0].strip()
 
 
 def _product_info(
@@ -498,6 +515,7 @@ def build_analysis(
     products: dict[str, dict[str, Any]] = {}
     shop_comparison: dict[str, dict[str, Any]] = {}
     product_comparison: dict[str, dict[str, Any]] = {}
+    product_quantity_comparison: dict[str, dict[str, Any]] = {}
     owner_comparison: dict[str, dict[str, Any]] = {}
     hourly_comparison = {
         hour: _new_comparison_entry(hour=hour, label=f"{hour:02d}:00") for hour in range(24)
@@ -575,9 +593,13 @@ def build_analysis(
             line_amount = _goods_amount(goods)
             order_units += units
             product_no, product_name, spec_name = _product_info(goods, product_master)
-            product_key = product_no or product_name
+            api_sku_code = _api_sku_code(goods)
+            api_goods_code = _api_goods_code(goods)
+            # 金额维度按平台商品编码聚合；数量维度按平台规格编码聚合。
+            amount_product_key = api_goods_code or product_no or product_name
+            quantity_product_key = api_sku_code or product_no or product_name
             product = products.setdefault(
-                product_key,
+                amount_product_key,
                 {
                     "product_no": product_no,
                     "product_name": product_name,
@@ -588,25 +610,49 @@ def build_analysis(
                     "shop_count": 0,
                     "order_keys": set(),
                     "shop_keys": set(),
+                    "sku_codes": set(),
                 },
             )
             product["units"] += units
             product["order_amount"] += line_amount
             product["order_keys"].add(trade_key)
             product["shop_keys"].add(shop_key)
-            shop["product_keys"].add(product_key)
+            if api_goods_code:
+                product["sku_codes"].add(api_goods_code)
+            shop["product_keys"].add(amount_product_key)
 
             if comparison_bucket:
                 comparison_product = product_comparison.setdefault(
-                    product_key,
+                    amount_product_key,
                     _new_comparison_entry(
                         product_no=product_no,
                         product_name=product_name,
                         spec_name="",
+                        sku_codes=set(),
                     ),
                 )
+                if api_goods_code:
+                    comparison_product["sku_codes"].add(api_goods_code)
                 _add_comparison_value(
                     comparison_product,
+                    comparison_bucket,
+                    amount=line_amount,
+                    units=units,
+                    order_key=trade_key,
+                )
+                quantity_product = product_quantity_comparison.setdefault(
+                    quantity_product_key,
+                    _new_comparison_entry(
+                        product_no=product_no,
+                        product_name=product_name,
+                        spec_name="",
+                        sku_codes=set(),
+                    ),
+                )
+                if api_sku_code:
+                    quantity_product["sku_codes"].add(api_sku_code)
+                _add_comparison_value(
+                    quantity_product,
                     comparison_bucket,
                     amount=line_amount,
                     units=units,
@@ -697,6 +743,9 @@ def build_analysis(
 
     def finalize(item: dict[str, Any]) -> dict[str, Any]:
         item = dict(item)
+        sku_codes = item.pop("sku_codes", None)
+        if sku_codes:
+            item["sku_code"] = " / ".join(sorted(sku_codes))
         item["avg_order_amount"] = (
             item["order_amount"] / item["order_count"] if item.get("order_count") else 0.0
         )
@@ -707,6 +756,9 @@ def build_analysis(
     product_rows = [finalize(item) for item in products.values()]
     shop_comparison_rows = [_finalize_comparison_entry(item) for item in shop_comparison.values()]
     product_comparison_rows = [_finalize_comparison_entry(item) for item in product_comparison.values()]
+    product_quantity_comparison_rows = [
+        _finalize_comparison_entry(item) for item in product_quantity_comparison.values()
+    ]
     owner_comparison_rows = [_finalize_comparison_entry(item) for item in owner_comparison.values()]
     comparison_summary = _finalize_comparison_entry(comparison_totals)
     hourly_rows = [
@@ -762,6 +814,9 @@ def build_analysis(
     product_rows.sort(key=lambda item: item["order_amount"], reverse=True)
     shop_comparison_rows.sort(key=lambda item: (item["today_amount"], item["yesterday_amount"]), reverse=True)
     product_comparison_rows.sort(key=lambda item: (item["today_amount"], item["yesterday_amount"]), reverse=True)
+    product_quantity_comparison_rows.sort(
+        key=lambda item: (item["today_units"], item["yesterday_units"]), reverse=True
+    )
     owner_comparison_rows.sort(key=lambda item: (item["today_amount"], item["yesterday_amount"]), reverse=True)
     for index, item in enumerate(shop_comparison_rows, start=1):
         item["rank"] = index
@@ -808,6 +863,7 @@ def build_analysis(
         "hourly_series": hourly_series,
         "shop_comparison": shop_comparison_rows,
         "product_comparison": product_comparison_rows,
+        "product_quantity_comparison": product_quantity_comparison_rows,
         "owner_comparison": owner_comparison_rows,
         "comparison": {
             "today": comparison_date.isoformat(),
@@ -989,3 +1045,4 @@ def rows_to_csv(columns: list[str], rows: list[dict[str, Any]]) -> str:
     writer.writeheader()
     writer.writerows(rows)
     return buffer.getvalue()
+
