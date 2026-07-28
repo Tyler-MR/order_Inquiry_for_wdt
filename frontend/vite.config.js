@@ -15,7 +15,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [vue()],
+    base: './',
     server: { proxy },
     preview: { proxy },
   }
 })
+
