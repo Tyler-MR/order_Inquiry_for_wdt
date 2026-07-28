@@ -300,14 +300,20 @@ def _first_text(item: dict[str, Any], keys: tuple[str, ...]) -> str:
 
 
 def _goods_sku(goods: dict[str, Any]) -> str:
+    """Return the API specification code used by the SKU filter.
+
+    旺店通同时返回本地货号/规格号和平台规格编码。看板的 SKU 维度以
+    ``api_spec_no`` 为准，避免同一商品的本地 ``spec_no`` 覆盖平台编码。
+    """
+
     return _first_text(
         goods,
         (
+            "api_spec_no",
             "sku_code",
             "sku_no",
             "sku编码",
             "spec_no",
-            "api_spec_no",
             "goods_no",
             "api_goods_no",
         ),
@@ -318,19 +324,21 @@ def _goods_product_name(goods: dict[str, Any]) -> str:
     return _first_text(goods, ("goods_name", "api_goods_name", "product_name"))
 
 
-def _goods_brand(goods: dict[str, Any]) -> str:
-    explicit = _first_text(goods, ("brand", "brand_name", "goods_brand", "product_brand"))
-    if explicit:
-        return explicit
-    product_name = _goods_product_name(goods)
-    for known_brand in ("浪奇", "威王", "舒蕾"):
-        if known_brand in product_name:
-            return known_brand
-    return "白牌" if product_name else ""
-
-
 def _order_shop_name(order: dict[str, Any]) -> str:
     return normalize_shop_name(_first_text(order, ("shop_name", "fenxiao_shop_name")))
+
+
+def _shop_brand(shop_name: str) -> str:
+    """Derive the dashboard brand from the merchant/shop name."""
+
+    brand = ""
+    if "威王" in shop_name:
+        brand = "威王"
+    if "浪奇" in shop_name:
+        brand = "浪奇"
+    if "舒蕾" in shop_name:
+        brand = "舒蕾"
+    return brand or "白牌"
 
 
 def _date_layer(event_at: datetime | None) -> str:
@@ -390,17 +398,15 @@ def _filter_options(orders: list[dict[str, Any]]) -> dict[str, Any]:
         shop_name = _order_shop_name(order)
         if shop_name:
             shops.add(shop_name)
+        brands.add(_shop_brand(shop_name))
         owners.add(_owner_name(order, shop_name, owner_map))
         for goods in order.get("goods_list") or []:
             sku = _goods_sku(goods)
             product_name = _product_info(goods, product_master)[1]
-            brand = _goods_brand(goods)
             if sku:
                 skus.add(sku)
             if product_name:
                 products.add(product_name)
-            if brand:
-                brands.add(brand)
     return {
         "brands": sorted(brands)[:500],
         "sku_codes": sorted(skus)[:1000],
@@ -429,7 +435,7 @@ def _apply_dashboard_filters(
     local_now = datetime.now(LOCAL_TZ)
     current_hour = local_now.hour
     owner_map = _load_shop_owner_map() if owner_names else {}
-    product_master = _load_product_master_map() if brands or sku_codes or product_names else {}
+    product_master = _load_product_master_map() if sku_codes or product_names else {}
     if not any((brands, sku_codes, product_names, shop_names, owner_names, date_layers, hours)) and not time_truncated:
         return orders
 
@@ -447,26 +453,23 @@ def _apply_dashboard_filters(
             continue
         if hours and (event_at is None or event_at.hour not in hours):
             continue
-        if shop_names and _order_shop_name(order) not in shop_names:
+        shop_name = _order_shop_name(order)
+        if brands and _shop_brand(shop_name) not in brands:
             continue
-        if owner_names and _owner_name(order, _order_shop_name(order), owner_map) not in owner_names:
+        if shop_names and shop_name not in shop_names:
+            continue
+        if owner_names and _owner_name(order, shop_name, owner_map) not in owner_names:
             continue
 
         goods_list = order.get("goods_list") or []
-        if brands or sku_codes or product_names:
+        if sku_codes or product_names:
             matched_goods = []
             for goods in goods_list:
-                brand = _goods_brand(goods)
                 product_name = _product_info(goods, product_master)[1]
                 # 当前旺店通订单接口没有独立品牌字段时，品牌筛选退化为商品名称关键词匹配。
-                brand_match = (
-                    not brands
-                    or (brand and brand in brands)
-                    or any(keyword.casefold() in product_name.casefold() for keyword in brands)
-                )
                 sku_match = not sku_codes or _goods_sku(goods) in sku_codes
                 product_match = not product_names or product_name in product_names
-                if brand_match and sku_match and product_match:
+                if sku_match and product_match:
                     matched_goods.append(goods)
             if not matched_goods:
                 continue
@@ -546,3 +549,4 @@ def latest_sync(db: Session) -> dict[str, Any] | None:
         "fetched_count": run.fetched_count,
         "error_message": run.error_message,
     }
+
