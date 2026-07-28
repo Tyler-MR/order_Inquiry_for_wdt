@@ -111,6 +111,7 @@ class WdtOrderQueryResponse(BaseModel):
     hourly_series: list[dict[str, Any]] = Field(default_factory=list)
     shop_comparison: list[dict[str, Any]] = Field(default_factory=list)
     product_comparison: list[dict[str, Any]] = Field(default_factory=list)
+    product_quantity_comparison: list[dict[str, Any]] = Field(default_factory=list)
     owner_comparison: list[dict[str, Any]] = Field(default_factory=list)
     comparison: dict[str, Any] = Field(default_factory=dict)
     filter_options: dict[str, Any] = Field(default_factory=dict)
@@ -118,3 +119,4 @@ class WdtOrderQueryResponse(BaseModel):
     pre_filter_order_count: int | None = None
     last_synced_at: str | None = None
     sync_status: str | None = None
+
