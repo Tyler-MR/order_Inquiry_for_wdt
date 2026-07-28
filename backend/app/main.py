@@ -20,6 +20,7 @@ load_dotenv()
 
 from app.profit_service import DEFAULT_DATA_DIR, ProfitDataStore, parse_date
 from app.database import get_db
+from app.data_validation import data_validation_loop
 from app.order_events import OrderEventBus
 from app.order_sync import latest_sync, read_order_analysis, sync_recent_orders
 from app.schemas import WdtOrderQueryRequest, WdtOrderQueryResponse
@@ -118,12 +119,15 @@ async def order_sync_loop() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     sync_task = asyncio.create_task(order_sync_loop())
+    validation_task = asyncio.create_task(data_validation_loop())
     try:
         yield
     finally:
-        sync_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await sync_task
+        for task in (sync_task, validation_task):
+            task.cancel()
+        for task in (sync_task, validation_task):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 app = FastAPI(
@@ -454,3 +458,4 @@ def reload_profit_data(user: UserSession = Depends(get_current_user)) -> dict:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"刷新利润表失败：{error}") from error
+
