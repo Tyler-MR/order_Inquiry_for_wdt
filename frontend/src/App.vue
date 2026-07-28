@@ -566,6 +566,7 @@ function pointTooltipY(point) {
 
 const shopComparisonRows = computed(() => result.value?.shop_comparison || [])
 const productComparisonRows = computed(() => result.value?.product_comparison || [])
+const productQuantityComparisonRows = computed(() => result.value?.product_quantity_comparison || [])
 const ownerComparisonRows = computed(() => result.value?.owner_comparison || [])
 const hiddenPddOwnerName = '淘宝 李世豪'
 const isPddDashboard = computed(() => dashboardFilters.platformId === '39')
@@ -632,7 +633,7 @@ const tableauDateTotal = computed(() => ({
 
 const tableauOwnerRows = computed(() => visibleOwnerComparisonRows.value)
 const tableauShopRows = computed(() => shopComparisonRows.value)
-const tableauProductRows = computed(() => [...productComparisonRows.value]
+const tableauProductRows = computed(() => [...productQuantityComparisonRows.value]
   .sort((left, right) => Number(right.today_units || 0) - Number(left.today_units || 0))
   .map((item, index) => ({ ...item, tableauRank: index + 1 })))
 const tableauSalesProductRows = computed(() => [...productComparisonRows.value]
@@ -782,7 +783,7 @@ onBeforeUnmount(() => {
               <div class="tableau-sheet-heading"><h2>商品对比{{ comparisonYesterdayLabel }}排名</h2><span>按商品编码{{ comparisonTodayLabel }}实收金额排序</span></div>
               <table class="tableau-data-table">
                 <thead><tr><th>商品名称1 / Sku编码</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
-                <tbody><tr v-for="product in tableauSalesProductRows" :key="product.product_no || product.product_name" class="tableau-click-source-row" :class="{ 'is-selected': dashboardFilters.productNames.includes(product.product_name) }" tabindex="0" @click="selectDashboardDimension('product', product.product_name)" @keydown.enter.prevent="selectDashboardDimension('product', product.product_name)" @keydown.space.prevent="selectDashboardDimension('product', product.product_name)"><td><strong>{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small></td><td>{{ formatMoney(product.yesterday_amount) }}</td><td>{{ formatMoney(product.today_amount) }}</td><td :class="growthClass(product.amount_growth_pct)">{{ formatGrowth(product.amount_growth_pct) }}</td></tr></tbody>
+                <tbody><tr v-for="product in tableauSalesProductRows" :key="product.sku_code || product.product_no || product.product_name" class="tableau-click-source-row" :class="{ 'is-selected': dashboardFilters.productNames.includes(product.product_name) }" tabindex="0" @click="selectDashboardDimension('product', product.product_name)" @keydown.enter.prevent="selectDashboardDimension('product', product.product_name)" @keydown.space.prevent="selectDashboardDimension('product', product.product_name)"><td><strong>{{ product.product_name }}</strong><small>{{ product.sku_code || product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small></td><td>{{ formatMoney(product.yesterday_amount) }}</td><td>{{ formatMoney(product.today_amount) }}</td><td :class="growthClass(product.amount_growth_pct)">{{ formatGrowth(product.amount_growth_pct) }}</td></tr></tbody>
               </table>
             </article>
           </div>
@@ -827,7 +828,7 @@ onBeforeUnmount(() => {
               <div class="tableau-sheet-heading"><h2>商品对比{{ comparisonYesterdayLabel }}排名(商品数量)</h2><span>按编码数据对商品名称1降序排序</span></div>
               <table class="tableau-data-table">
                 <thead><tr><th>商品名称1 / Sku编码</th><th>{{ tableauDateTotal.yesterday }}</th><th>{{ tableauDateTotal.today }}</th><th>差异%</th></tr></thead>
-                <tbody><tr v-for="product in tableauProductRows" :key="product.product_no || product.product_name"><td><strong>{{ product.product_name }}</strong><small>{{ product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small></td><td>{{ formatUnits(product.yesterday_units) }}</td><td>{{ formatUnits(product.today_units) }}</td><td :class="growthClass(product.units_growth_pct)">{{ formatGrowth(product.units_growth_pct) }}</td></tr></tbody>
+                <tbody><tr v-for="product in tableauProductRows" :key="product.sku_code || product.product_no || product.product_name"><td><strong>{{ product.product_name }}</strong><small>{{ product.sku_code || product.product_no || '无货号' }}<template v-if="product.spec_name"> · {{ product.spec_name }}</template></small></td><td>{{ formatUnits(product.yesterday_units) }}</td><td>{{ formatUnits(product.today_units) }}</td><td :class="growthClass(product.units_growth_pct)">{{ formatGrowth(product.units_growth_pct) }}</td></tr></tbody>
               </table>
             </article>
           </div>
@@ -1043,3 +1044,4 @@ onBeforeUnmount(() => {
     </section>
   </main>
 </template>
+
